@@ -7,8 +7,17 @@ export interface Message {
   id: string;
   role: Role;
   content: string;
-  timestamp: Date;
+  timestamp: Date | string;
   isError?: boolean;
+}
+
+export interface ChatSessionData {
+  id: string;
+  title: string;
+  messages: Message[];
+  modelId: string;
+  isThinkingEnabled: boolean;
+  lastUpdated: string;
 }
 
 export enum Theme {

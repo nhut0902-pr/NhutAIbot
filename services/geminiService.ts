@@ -1,5 +1,6 @@
 import { GoogleGenAI, Chat, GenerateContentResponse } from "@google/genai";
 import { MODELS, SYSTEM_INSTRUCTION } from '../constants';
+import { Message, Role } from '../types';
 
 let chatSession: Chat | null = null;
 let aiInstance: GoogleGenAI | null = null;
@@ -11,44 +12,55 @@ const getAIInstance = (): GoogleGenAI => {
   return aiInstance;
 };
 
-export const initializeChat = (modelId: string = MODELS.FLASH.id, thinkingBudget: number = 0): void => {
+export const initializeChat = (
+  modelId: string = MODELS.FLASH.id, 
+  thinkingBudget: number = 0,
+  history: Message[] = []
+): void => {
   const ai = getAIInstance();
   
   const config: any = {
     systemInstruction: SYSTEM_INSTRUCTION,
+    temperature: 0.7,
   };
 
   if (thinkingBudget > 0) {
     config.thinkingConfig = { thinkingBudget };
   }
 
+  // Convert app messages to Gemini history format
+  const geminiHistory = history.map(msg => ({
+    role: msg.role === Role.USER ? 'user' : 'model',
+    parts: [{ text: msg.content }]
+  }));
+
   chatSession = ai.chats.create({
     model: modelId,
     config: config,
+    history: geminiHistory,
   });
 };
 
 export const resetChat = (modelId: string, thinkingBudget: number): void => {
-  initializeChat(modelId, thinkingBudget);
+  initializeChat(modelId, thinkingBudget, []);
 };
 
 export const sendMessageStream = async (
   message: string
 ): Promise<AsyncGenerator<GenerateContentResponse, void, unknown>> => {
   if (!chatSession) {
-    // Fallback to default if not initialized
     initializeChat();
   }
   
   if (!chatSession) {
-    throw new Error("Failed to initialize chat session");
+    throw new Error("Không thể khởi tạo phiên chat với Gemini.");
   }
 
   try {
     const result = await chatSession.sendMessageStream({ message });
     return result;
   } catch (error) {
-    console.error("Error sending message to Gemini:", error);
+    console.error("Gemini API Error:", error);
     throw error;
   }
 };

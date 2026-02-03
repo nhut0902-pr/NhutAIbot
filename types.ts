@@ -1,6 +1,12 @@
+
 export enum Role {
   USER = 'user',
   MODEL = 'model'
+}
+
+export interface Source {
+  uri: string;
+  title: string;
 }
 
 export interface Message {
@@ -9,6 +15,7 @@ export interface Message {
   content: string;
   timestamp: Date | string;
   isError?: boolean;
+  sources?: Source[];
 }
 
 export interface ChatSessionData {
@@ -17,6 +24,7 @@ export interface ChatSessionData {
   messages: Message[];
   modelId: string;
   isThinkingEnabled: boolean;
+  isWebSearchEnabled: boolean;
   lastUpdated: string;
 }
 

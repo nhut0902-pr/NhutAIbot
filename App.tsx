@@ -1,8 +1,9 @@
+
 import React, { useState, useEffect, useRef } from 'react';
-import { Send, Moon, Sun, RotateCcw, Download, Bot, User, Cpu, Settings, Zap, Sparkles, Brain, X, ChevronDown, Info, AlertCircle, History, Plus, Trash2, MessageSquare, Menu } from 'lucide-react';
+import { Send, Moon, Sun, RotateCcw, Download, Bot, User, Cpu, Settings, Zap, Sparkles, Brain, X, ChevronDown, Info, AlertCircle, History, Plus, Trash2, MessageSquare, Menu, Globe, ExternalLink, Github, Code, Award, Search, CheckCircle2 } from 'lucide-react';
 import { GenerateContentResponse } from "@google/genai";
 
-import { Message, Role, Theme, ChatSessionData } from './types';
+import { Message, Role, Theme, ChatSessionData, Source } from './types';
 import { APP_NAME, INITIAL_GREETING, MODELS, HACKATHON_INFO } from './constants';
 import * as geminiService from './services/geminiService';
 import MarkdownRenderer from './components/MarkdownRenderer';
@@ -17,12 +18,15 @@ const App: React.FC = () => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [isSearching, setIsSearching] = useState(false);
   const [theme, setTheme] = useState<Theme>(Theme.DARK);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [isHackathonModalOpen, setIsHackathonModalOpen] = useState(false);
   
   // Settings State
   const [selectedModel, setSelectedModel] = useState(MODELS.FLASH.id);
   const [isThinkingEnabled, setIsThinkingEnabled] = useState(false);
+  const [isWebSearchEnabled, setIsWebSearchEnabled] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [showResetNotice, setShowResetNotice] = useState(false);
 
@@ -69,6 +73,7 @@ const App: React.FC = () => {
       }],
       modelId: MODELS.FLASH.id,
       isThinkingEnabled: false,
+      isWebSearchEnabled: false,
       lastUpdated: new Date().toISOString(),
     };
 
@@ -77,7 +82,8 @@ const App: React.FC = () => {
     setMessages(newSession.messages);
     setSelectedModel(newSession.modelId);
     setIsThinkingEnabled(newSession.isThinkingEnabled);
-    geminiService.initializeChat(newSession.modelId, 0, []);
+    setIsWebSearchEnabled(newSession.isWebSearchEnabled);
+    geminiService.initializeChat(newSession.modelId, 0, [], newSession.isWebSearchEnabled);
     setIsSidebarOpen(false);
   };
 
@@ -88,11 +94,12 @@ const App: React.FC = () => {
       setMessages(session.messages);
       setSelectedModel(session.modelId);
       setIsThinkingEnabled(session.isThinkingEnabled);
-      // Re-initialize AI with memory of this session
+      setIsWebSearchEnabled(session.isWebSearchEnabled || false);
       geminiService.initializeChat(
         session.modelId, 
         session.isThinkingEnabled ? 16384 : 0,
-        session.messages.slice(0, -1) // Exclude last if it's currently being generated
+        session.messages.slice(0, -1),
+        session.isWebSearchEnabled
       );
     }
     setIsSidebarOpen(false);
@@ -111,18 +118,18 @@ const App: React.FC = () => {
     }
   };
 
-  const handleConfigChange = (modelId: string, thinking: boolean) => {
+  const handleConfigChange = (modelId: string, thinking: boolean, webSearch: boolean) => {
     setSelectedModel(modelId);
     setIsThinkingEnabled(thinking);
+    setIsWebSearchEnabled(webSearch);
     
-    // Update AI Service
-    geminiService.initializeChat(modelId, thinking ? 16384 : 0, messages);
+    geminiService.initializeChat(modelId, thinking ? 16384 : 0, messages, webSearch);
     
-    // Update Current Session Metadata
     setSessions(prev => prev.map(s => s.id === currentSessionId ? {
       ...s,
       modelId,
       isThinkingEnabled: thinking,
+      isWebSearchEnabled: webSearch,
       lastUpdated: new Date().toISOString()
     } : s));
 
@@ -144,14 +151,18 @@ const App: React.FC = () => {
 
   useEffect(() => {
     scrollToBottom();
-  }, [messages, isLoading]);
+  }, [messages, isLoading, isSearching]);
 
   const toggleTheme = () => {
     setTheme((prev) => (prev === Theme.DARK ? Theme.LIGHT : Theme.DARK));
   };
 
+  const toggleWebSearch = () => {
+    handleConfigChange(selectedModel, isThinkingEnabled, !isWebSearchEnabled);
+  };
+
   const handleReset = () => {
-    geminiService.resetChat(selectedModel, isThinkingEnabled ? 16384 : 0);
+    geminiService.resetChat(selectedModel, isThinkingEnabled ? 16384 : 0, isWebSearchEnabled);
     const resetMsgs = [{
       id: Date.now().toString(),
       role: Role.MODEL,
@@ -165,7 +176,6 @@ const App: React.FC = () => {
   const updateSessionHistory = (updatedMessages: Message[]) => {
     setSessions(prev => prev.map(s => {
       if (s.id === currentSessionId) {
-        // Auto-title from first user message
         let newTitle = s.title;
         if (s.title === 'Cuộc trò chuyện mới' || s.title === '') {
           const firstUserMsg = updatedMessages.find(m => m.role === Role.USER);
@@ -199,6 +209,7 @@ const App: React.FC = () => {
     updateSessionHistory(updatedWithUser);
     setInput('');
     setIsLoading(true);
+    if (isWebSearchEnabled) setIsSearching(true);
 
     if (inputRef.current) {
         inputRef.current.style.height = 'auto';
@@ -209,6 +220,7 @@ const App: React.FC = () => {
       
       const botMessageId = (Date.now() + 1).toString();
       let fullContent = '';
+      let detectedSources: Source[] = [];
 
       const initialBotMsg: Message = {
         id: botMessageId,
@@ -220,14 +232,45 @@ const App: React.FC = () => {
       setMessages(prev => [...prev, initialBotMsg]);
 
       for await (const chunk of stream) {
-        const chunkText = (chunk as GenerateContentResponse).text;
-        if (chunkText) {
-          fullContent += chunkText;
+        const chunkObj = chunk as GenerateContentResponse;
+        let hasNewMetadata = false;
+
+        // Xử lý metadata nguồn (Grounding) tách biệt với text
+        const groundingMetadata = chunkObj.candidates?.[0]?.groundingMetadata;
+        if (groundingMetadata) {
+            const chunks = groundingMetadata.groundingChunks;
+            if (chunks && chunks.length > 0) {
+                chunks.forEach((c: any) => {
+                    if (c.web) {
+                        const source: Source = { uri: c.web.uri, title: c.web.title || c.web.uri };
+                        if (!detectedSources.some(s => s.uri === source.uri)) {
+                            detectedSources.push(source);
+                            hasNewMetadata = true;
+                        }
+                    }
+                });
+            }
+        }
+
+        const chunkText = chunkObj.text;
+        
+        // Cập nhật state nếu có text MỚI hoặc có nguồn MỚI
+        if (chunkText || hasNewMetadata) {
+          if (chunkText) {
+            fullContent += chunkText;
+            setIsSearching(false); // Đã bắt đầu có kết quả trả về, tắt trạng thái đang tìm
+          }
+          
           setMessages((prev) => {
-            const newMsgs = prev.map((msg) =>
-              msg.id === botMessageId ? { ...msg, content: fullContent } : msg
+            return prev.map((msg) =>
+              msg.id === botMessageId 
+                ? { 
+                    ...msg, 
+                    content: fullContent, 
+                    sources: detectedSources.length > 0 ? [...detectedSources] : msg.sources 
+                  } 
+                : msg
             );
-            return newMsgs;
           });
         }
       }
@@ -242,7 +285,7 @@ const App: React.FC = () => {
       const errorMsg: Message = {
         id: Date.now().toString(),
         role: Role.MODEL,
-        content: "Rất tiếc, đã có lỗi xảy ra. Có thể bộ nhớ AI đã đầy hoặc mất kết nối.",
+        content: "Rất tiếc, đã có lỗi xảy ra. Vui lòng thử lại sau.",
         timestamp: new Date().toISOString(),
         isError: true,
       };
@@ -253,6 +296,7 @@ const App: React.FC = () => {
       });
     } finally {
       setIsLoading(false);
+      setIsSearching(false);
     }
   };
 
@@ -319,7 +363,14 @@ const App: React.FC = () => {
           </div>
 
           <div className={`mt-auto pt-4 border-t ${theme === Theme.DARK ? 'border-white/10 text-gray-500' : 'border-black/5 text-gray-400'}`}>
-            <p className="text-[10px] font-bold text-center uppercase tracking-widest">{HACKATHON_INFO}</p>
+            <button 
+              onClick={() => setIsHackathonModalOpen(true)}
+              className="w-full py-2 group hover:scale-[1.02] transition-transform"
+            >
+              <p className="text-[10px] font-bold text-center uppercase tracking-widest group-hover:text-indigo-500 transition-colors">
+                {HACKATHON_INFO}
+              </p>
+            </button>
           </div>
         </div>
       </aside>
@@ -353,7 +404,7 @@ const App: React.FC = () => {
           <div className="flex items-center gap-1.5 md:gap-2">
               {showResetNotice && (
                 <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 px-4 py-2 rounded-lg bg-indigo-600 text-white text-xs font-medium shadow-xl animate-bounce flex items-center gap-2">
-                  <AlertCircle size={14} /> Memory Updated!
+                  <AlertCircle size={14} /> Cập nhật cài đặt!
                 </div>
               )}
 
@@ -386,7 +437,7 @@ const App: React.FC = () => {
                           <h3 className={`text-xs font-bold uppercase tracking-wider mb-3 ${theme === Theme.DARK ? 'text-gray-400' : 'text-gray-500'}`}>Model</h3>
                           <div className="grid grid-cols-2 gap-2">
                             <button
-                              onClick={() => handleConfigChange(MODELS.FLASH.id, isThinkingEnabled)}
+                              onClick={() => handleConfigChange(MODELS.FLASH.id, isThinkingEnabled, isWebSearchEnabled)}
                               className={`flex flex-col items-center gap-2 p-3 rounded-xl border transition-all ${
                                 selectedModel === MODELS.FLASH.id
                                   ? (theme === Theme.DARK ? 'bg-indigo-600/20 border-indigo-500/50 text-indigo-200' : 'bg-indigo-50 border-indigo-200 text-indigo-700 shadow-inner')
@@ -397,7 +448,7 @@ const App: React.FC = () => {
                               <span className="text-xs font-bold">Flash</span>
                             </button>
                             <button
-                              onClick={() => handleConfigChange(MODELS.PRO.id, isThinkingEnabled)}
+                              onClick={() => handleConfigChange(MODELS.PRO.id, isThinkingEnabled, isWebSearchEnabled)}
                               className={`flex flex-col items-center gap-2 p-3 rounded-xl border transition-all ${
                                 selectedModel === MODELS.PRO.id
                                   ? (theme === Theme.DARK ? 'bg-purple-600/20 border-purple-500/50 text-purple-200' : 'bg-purple-50 border-purple-200 text-purple-700 shadow-inner')
@@ -413,12 +464,25 @@ const App: React.FC = () => {
                           <div className="flex items-center justify-between mb-2">
                             <h3 className={`text-xs font-bold uppercase tracking-wider ${theme === Theme.DARK ? 'text-gray-400' : 'text-gray-500'}`}>Thinking Mode</h3>
                             <button
-                               onClick={() => handleConfigChange(selectedModel, !isThinkingEnabled)}
+                               onClick={() => handleConfigChange(selectedModel, !isThinkingEnabled, isWebSearchEnabled)}
                                className={`w-11 h-6 rounded-full relative transition-colors duration-300 shadow-inner ${
                                  isThinkingEnabled ? 'bg-blue-500' : (theme === Theme.DARK ? 'bg-gray-700' : 'bg-gray-300')
                                }`}
                             >
                               <div className={`absolute top-1 left-1 bg-white w-4 h-4 rounded-full shadow-md transition-transform duration-300 ${isThinkingEnabled ? 'translate-x-5' : 'translate-x-0'}`}></div>
+                            </button>
+                          </div>
+                        </div>
+                        <div className={`pt-4 border-t ${theme === Theme.DARK ? 'border-white/10' : 'border-black/5'}`}>
+                          <div className="flex items-center justify-between mb-2">
+                            <h3 className={`text-xs font-bold uppercase tracking-wider ${theme === Theme.DARK ? 'text-gray-400' : 'text-gray-500'}`}>Web Search</h3>
+                            <button
+                               onClick={() => handleConfigChange(selectedModel, isThinkingEnabled, !isWebSearchEnabled)}
+                               className={`w-11 h-6 rounded-full relative transition-colors duration-300 shadow-inner ${
+                                 isWebSearchEnabled ? 'bg-cyan-500' : (theme === Theme.DARK ? 'bg-gray-700' : 'bg-gray-300')
+                               }`}
+                            >
+                              <div className={`absolute top-1 left-1 bg-white w-4 h-4 rounded-full shadow-md transition-transform duration-300 ${isWebSearchEnabled ? 'translate-x-5' : 'translate-x-0'}`}></div>
                             </button>
                           </div>
                         </div>
@@ -478,7 +542,46 @@ const App: React.FC = () => {
                   {msg.role === Role.USER ? (
                     <p className="whitespace-pre-wrap leading-relaxed">{msg.content}</p>
                   ) : (
-                    <MarkdownRenderer content={msg.content} />
+                    <>
+                      <MarkdownRenderer content={msg.content} />
+                      {msg.sources && msg.sources.length > 0 && (
+                        <div className={`mt-5 pt-4 border-t ${theme === Theme.DARK ? 'border-white/10' : 'border-black/10'} animate-[fadeIn_0.5s_ease-out]`}>
+                          <div className="flex items-center justify-between mb-3">
+                            <p className="text-[10px] font-bold uppercase tracking-wider flex items-center gap-2 text-indigo-500">
+                                <CheckCircle2 size={12} /> Nguồn đã duyệt ({msg.sources.length})
+                            </p>
+                          </div>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                            {msg.sources.map((source, idx) => (
+                              <a 
+                                key={idx} 
+                                href={source.uri} 
+                                target="_blank" 
+                                rel="noopener noreferrer"
+                                className={`flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium transition-all group ${
+                                  theme === Theme.DARK 
+                                    ? 'bg-white/5 hover:bg-white/10 border border-white/10 hover:border-indigo-500/50' 
+                                    : 'bg-black/5 hover:bg-black/10 border border-black/5 hover:border-indigo-500/30'
+                                }`}
+                              >
+                                <div className={`p-1.5 rounded-lg ${theme === Theme.DARK ? 'bg-indigo-500/20' : 'bg-indigo-100'} text-indigo-500 group-hover:scale-110 transition-transform`}>
+                                    <Globe size={12} />
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                    <p className={`truncate font-bold mb-0.5 ${theme === Theme.DARK ? 'text-gray-200' : 'text-gray-700'}`}>
+                                        {source.title}
+                                    </p>
+                                    <p className={`truncate opacity-40 text-[10px]`}>
+                                        {new URL(source.uri).hostname}
+                                    </p>
+                                </div>
+                                <ExternalLink size={10} className="opacity-0 group-hover:opacity-100 text-indigo-400 transition-opacity flex-shrink-0" />
+                              </a>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </>
                   )}
                   <span className={`text-[9px] font-medium absolute bottom-1 ${msg.role === Role.USER ? 'left-2 text-purple-200' : 'right-2 opacity-40'}`}>
                     {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
@@ -494,10 +597,19 @@ const App: React.FC = () => {
                   <Bot size={18} />
                 </div>
                 <div className={`px-4 py-3 rounded-2xl rounded-tl-sm ${theme === Theme.DARK ? 'glass-panel' : 'light-mode-glass'}`}>
-                  <div className="flex flex-col gap-1">
-                    <span className="text-[10px] font-bold opacity-50 uppercase tracking-tighter">
-                      {isThinkingEnabled ? 'NhutAIbot đang suy nghĩ...' : 'NhutAIbot đang soạn...'}
-                    </span>
+                  <div className="flex flex-col gap-1.5">
+                    <div className="flex items-center gap-2">
+                        {isSearching ? (
+                            <div className="flex items-center gap-1.5 text-cyan-500 text-[10px] font-bold uppercase tracking-tighter">
+                                <Search size={12} className="animate-spin" />
+                                Đang tìm kiếm thông tin mới nhất...
+                            </div>
+                        ) : (
+                            <span className="text-[10px] font-bold opacity-50 uppercase tracking-tighter">
+                              {isThinkingEnabled ? 'NhutAIbot đang suy nghĩ...' : 'NhutAIbot đang soạn...'}
+                            </span>
+                        )}
+                    </div>
                     <TypingIndicator />
                   </div>
                 </div>
@@ -507,7 +619,7 @@ const App: React.FC = () => {
           <div ref={messagesEndRef} />
         </main>
 
-        {/* Floating Input Area (Positioned at bottom of flex container) */}
+        {/* Floating Input Area */}
         <footer className={`flex-shrink-0 w-full px-4 py-4 md:py-6 border-t ${
           theme === Theme.DARK ? 'border-white/5' : 'border-black/5'
         }`}>
@@ -517,37 +629,149 @@ const App: React.FC = () => {
                   ? 'bg-black/60 border-white/10 ring-1 ring-white/5 focus-within:ring-indigo-500/50' 
                   : 'bg-white/90 border-white/60 ring-1 ring-black/5 focus-within:ring-indigo-400/50'
             }`}>
-              <textarea
-                ref={inputRef}
-                rows={1}
-                value={input}
-                onChange={(e) => {
-                  setInput(e.target.value);
-                  e.target.style.height = 'auto';
-                  e.target.style.height = `${Math.min(e.target.scrollHeight, 150)}px`;
-                }}
-                onKeyDown={handleKeyDown}
-                placeholder={isLoading ? "Đang xử lý..." : "Nhắn NhutAIbot..."}
-                disabled={isLoading}
-                className={`w-full bg-transparent border-0 focus:ring-0 resize-none py-3 pl-4 pr-12 max-h-[150px] scrollbar-hide ${
-                  theme === Theme.DARK ? 'text-white placeholder-gray-400' : 'text-slate-800 placeholder-gray-500'
-                }`}
-              />
-              <button
-                onClick={handleSend}
-                disabled={!input.trim() || isLoading}
-                className={`absolute right-3 bottom-3 p-2.5 rounded-xl transition-all duration-200
-                  ${!input.trim() || isLoading 
-                    ? 'bg-gray-500/20 text-gray-500 cursor-not-allowed' 
-                    : 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/25 hover:scale-105 active:scale-95'
+              <div className="flex items-end">
+                <button
+                  onClick={toggleWebSearch}
+                  title={isWebSearchEnabled ? "Tắt tìm kiếm Web" : "Bật tìm kiếm Web"}
+                  className={`p-2.5 rounded-xl transition-all duration-200 mb-1 ml-1 group relative ${
+                    isWebSearchEnabled 
+                      ? 'bg-cyan-500 text-white shadow-lg shadow-cyan-500/25' 
+                      : (theme === Theme.DARK ? 'text-gray-400 hover:text-white hover:bg-white/10' : 'text-gray-500 hover:text-indigo-600 hover:bg-black/5')
                   }`}
-              >
-                <Send size={18} />
-              </button>
+                >
+                  <Globe size={18} className={isWebSearchEnabled ? 'animate-pulse' : ''} />
+                  {!isWebSearchEnabled && (
+                    <span className="absolute -top-10 left-1/2 -translate-x-1/2 px-2 py-1 bg-black text-white text-[10px] rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">
+                      Tìm kiếm Web
+                    </span>
+                  )}
+                </button>
+                
+                <textarea
+                  ref={inputRef}
+                  rows={1}
+                  value={input}
+                  onChange={(e) => {
+                    setInput(e.target.value);
+                    e.target.style.height = 'auto';
+                    e.target.style.height = `${Math.min(e.target.scrollHeight, 150)}px`;
+                  }}
+                  onKeyDown={handleKeyDown}
+                  placeholder={isLoading ? "Đang xử lý..." : isWebSearchEnabled ? "Tìm kiếm & Nhắn NhutAIbot..." : "Nhắn NhutAIbot..."}
+                  disabled={isLoading}
+                  className={`flex-1 bg-transparent border-0 focus:ring-0 resize-none py-3 px-4 max-h-[150px] scrollbar-hide ${
+                    theme === Theme.DARK ? 'text-white placeholder-gray-400' : 'text-slate-800 placeholder-gray-500'
+                  }`}
+                />
+                
+                <button
+                  onClick={handleSend}
+                  disabled={!input.trim() || isLoading}
+                  className={`p-2.5 rounded-xl transition-all duration-200 mb-1 mr-1
+                    ${!input.trim() || isLoading 
+                      ? 'bg-gray-500/20 text-gray-500 cursor-not-allowed' 
+                      : 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/25 hover:scale-105 active:scale-95'
+                    }`}
+                >
+                  <Send size={18} />
+                </button>
+              </div>
             </div>
+            {isWebSearchEnabled && (
+              <p className="text-[10px] text-center mt-2 font-medium text-cyan-500/70 animate-pulse">
+                Chế độ tìm kiếm Web đang hoạt động
+              </p>
+            )}
           </div>
         </footer>
       </div>
+
+      {/* Hackathon Modal */}
+      {isHackathonModalOpen && (
+        <div 
+          className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-[fadeIn_0.2s_ease-out]"
+          onClick={() => setIsHackathonModalOpen(false)}
+        >
+          <div 
+            className={`w-full max-w-md rounded-3xl p-8 border shadow-2xl animate-[scaleUp_0.3s_ease-out] relative ${
+              theme === Theme.DARK ? 'bg-slate-900/90 border-white/10' : 'bg-white/95 border-gray-200'
+            }`}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button 
+              onClick={() => setIsHackathonModalOpen(false)}
+              className="absolute top-4 right-4 p-2 rounded-full hover:bg-black/5 transition-colors"
+            >
+              <X size={20} />
+            </button>
+
+            <div className="flex flex-col items-center text-center">
+              <div className="w-16 h-16 rounded-2xl bg-indigo-600 flex items-center justify-center mb-6 shadow-xl shadow-indigo-500/30">
+                <Award size={32} className="text-white" />
+              </div>
+              
+              <h2 className="text-2xl font-bold mb-2">Dự án Hackathon</h2>
+              <p className={`text-sm mb-6 ${theme === Theme.DARK ? 'text-indigo-400' : 'text-indigo-600'} font-bold uppercase tracking-widest`}>
+                Nhutcoder Hackathon 2025
+              </p>
+              
+              <div className={`w-full space-y-4 text-left mb-8 p-4 rounded-2xl ${theme === Theme.DARK ? 'bg-white/5' : 'bg-black/5'}`}>
+                <div className="flex items-start gap-3">
+                  <div className="mt-1"><Bot size={16} className="text-indigo-500" /></div>
+                  <div>
+                    <p className="text-xs font-bold uppercase opacity-50 mb-1">Tên dự án</p>
+                    <p className="text-sm font-medium">NhutAIbot - Modern Gemini Assistant</p>
+                  </div>
+                </div>
+                <div className="flex items-start gap-3">
+                  <div className="mt-1"><User size={16} className="text-purple-500" /></div>
+                  <div>
+                    <p className="text-xs font-bold uppercase opacity-50 mb-1">Tác giả</p>
+                    <p className="text-sm font-medium">Nhutcoder</p>
+                  </div>
+                </div>
+                <div className="flex items-start gap-3">
+                  <div className="mt-1"><Code size={16} className="text-cyan-500" /></div>
+                  <div>
+                    <p className="text-xs font-bold uppercase opacity-50 mb-1">Công nghệ</p>
+                    <p className="text-sm font-medium">React, Gemini AI, Tailwind, Lucide, Framer</p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex gap-4 w-full">
+                <button 
+                  onClick={() => setIsHackathonModalOpen(false)}
+                  className="flex-1 py-3 px-6 rounded-xl bg-indigo-600 text-white font-bold hover:bg-indigo-700 transition-colors shadow-lg shadow-indigo-500/20"
+                >
+                  Đóng
+                </button>
+                <a 
+                  href="https://github.com" 
+                  target="_blank" 
+                  rel="noopener noreferrer"
+                  className={`flex items-center justify-center p-3 rounded-xl border ${
+                    theme === Theme.DARK ? 'border-white/10 hover:bg-white/5' : 'border-black/10 hover:bg-black/5'
+                  } transition-colors`}
+                >
+                  <Github size={20} />
+                </a>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <style>{`
+        @keyframes fadeIn {
+          from { opacity: 0; }
+          to { opacity: 1; }
+        }
+        @keyframes scaleUp {
+          from { opacity: 0; transform: scale(0.95); }
+          to { opacity: 1; transform: scale(1); }
+        }
+      `}</style>
     </div>
   );
 };

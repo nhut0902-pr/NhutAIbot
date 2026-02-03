@@ -1,3 +1,4 @@
+
 import { GoogleGenAI, Chat, GenerateContentResponse } from "@google/genai";
 import { MODELS, SYSTEM_INSTRUCTION } from '../constants';
 import { Message, Role } from '../types';
@@ -15,7 +16,8 @@ const getAIInstance = (): GoogleGenAI => {
 export const initializeChat = (
   modelId: string = MODELS.FLASH.id, 
   thinkingBudget: number = 0,
-  history: Message[] = []
+  history: Message[] = [],
+  isWebSearchEnabled: boolean = false
 ): void => {
   const ai = getAIInstance();
   
@@ -26,6 +28,10 @@ export const initializeChat = (
 
   if (thinkingBudget > 0) {
     config.thinkingConfig = { thinkingBudget };
+  }
+
+  if (isWebSearchEnabled) {
+    config.tools = [{ googleSearch: {} }];
   }
 
   // Convert app messages to Gemini history format
@@ -41,8 +47,8 @@ export const initializeChat = (
   });
 };
 
-export const resetChat = (modelId: string, thinkingBudget: number): void => {
-  initializeChat(modelId, thinkingBudget, []);
+export const resetChat = (modelId: string, thinkingBudget: number, isWebSearchEnabled: boolean): void => {
+  initializeChat(modelId, thinkingBudget, [], isWebSearchEnabled);
 };
 
 export const sendMessageStream = async (

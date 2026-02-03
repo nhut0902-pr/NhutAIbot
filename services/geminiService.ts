@@ -17,13 +17,15 @@ export const initializeChat = (
   modelId: string = MODELS.FLASH.id, 
   thinkingBudget: number = 0,
   history: Message[] = [],
-  isWebSearchEnabled: boolean = false
+  isWebSearchEnabled: boolean = false,
+  temperature: number = 0.7,
+  customSystemInstruction?: string
 ): void => {
   const ai = getAIInstance();
   
   const config: any = {
-    systemInstruction: SYSTEM_INSTRUCTION,
-    temperature: 0.7,
+    systemInstruction: customSystemInstruction || SYSTEM_INSTRUCTION,
+    temperature: temperature,
   };
 
   if (thinkingBudget > 0) {
@@ -34,7 +36,6 @@ export const initializeChat = (
     config.tools = [{ googleSearch: {} }];
   }
 
-  // Convert app messages to Gemini history format
   const geminiHistory = history.map(msg => ({
     role: msg.role === Role.USER ? 'user' : 'model',
     parts: [{ text: msg.content }]
@@ -47,12 +48,19 @@ export const initializeChat = (
   });
 };
 
-export const resetChat = (modelId: string, thinkingBudget: number, isWebSearchEnabled: boolean): void => {
-  initializeChat(modelId, thinkingBudget, [], isWebSearchEnabled);
+export const resetChat = (
+  modelId: string, 
+  thinkingBudget: number, 
+  isWebSearchEnabled: boolean,
+  temperature: number,
+  customSystemInstruction?: string
+): void => {
+  initializeChat(modelId, thinkingBudget, [], isWebSearchEnabled, temperature, customSystemInstruction);
 };
 
 export const sendMessageStream = async (
-  message: string
+  message: string,
+  imagePart?: { inlineData: { data: string, mimeType: string } }
 ): Promise<AsyncGenerator<GenerateContentResponse, void, unknown>> => {
   if (!chatSession) {
     initializeChat();
@@ -63,7 +71,12 @@ export const sendMessageStream = async (
   }
 
   try {
-    const result = await chatSession.sendMessageStream({ message });
+    const parts: any[] = [{ text: message }];
+    if (imagePart) {
+      parts.push(imagePart);
+    }
+    
+    const result = await chatSession.sendMessageStream({ message: parts });
     return result;
   } catch (error) {
     console.error("Gemini API Error:", error);

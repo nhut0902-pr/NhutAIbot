@@ -1,10 +1,15 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Send, Moon, Sun, RotateCcw, Download, Bot, User, Cpu, Settings, Zap, Sparkles, Brain, X, ChevronDown, Info, AlertCircle, History, Plus, Trash2, MessageSquare, Menu, Globe, ExternalLink, Github, Code, Award, Search, CheckCircle2 } from 'lucide-react';
+import { 
+  Send, Moon, Sun, RotateCcw, Download, Bot, User, Cpu, Settings, Zap, 
+  Sparkles, Brain, X, ChevronDown, Info, AlertCircle, History, Plus, 
+  Trash2, MessageSquare, Menu, Globe, ExternalLink, Github, Code, Award, 
+  Search, CheckCircle2, Image as ImageIcon, FileText, Sliders, Database, Beaker
+} from 'lucide-react';
 import { GenerateContentResponse } from "@google/genai";
 
 import { Message, Role, Theme, ChatSessionData, Source } from './types';
-import { APP_NAME, INITIAL_GREETING, MODELS, HACKATHON_INFO } from './constants';
+import { APP_NAME, INITIAL_GREETING, MODELS, HACKATHON_INFO, SYSTEM_INSTRUCTION } from './constants';
 import * as geminiService from './services/geminiService';
 import MarkdownRenderer from './components/MarkdownRenderer';
 import TypingIndicator from './components/TypingIndicator';
@@ -22,18 +27,24 @@ const App: React.FC = () => {
   const [theme, setTheme] = useState<Theme>(Theme.DARK);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isHackathonModalOpen, setIsHackathonModalOpen] = useState(false);
+  const [isAdvancedSettingsOpen, setIsAdvancedSettingsOpen] = useState(false);
+  const [activeSettingsTab, setActiveSettingsTab] = useState<'ai' | 'memory' | 'training'>('ai');
   
-  // Settings State
+  // Vision States
+  const [selectedImage, setSelectedImage] = useState<string | null>(null);
+  const [imageMimeType, setImageMimeType] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // AI Configuration States
   const [selectedModel, setSelectedModel] = useState(MODELS.FLASH.id);
   const [isThinkingEnabled, setIsThinkingEnabled] = useState(false);
   const [isWebSearchEnabled, setIsWebSearchEnabled] = useState(false);
-  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  const [showResetNotice, setShowResetNotice] = useState(false);
+  const [temperature, setTemperature] = useState(0.7);
+  const [customInstruction, setCustomInstruction] = useState(SYSTEM_INSTRUCTION);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
-  // Load from LocalStorage on mount
   useEffect(() => {
     const savedSessions = localStorage.getItem('nhutaibot_sessions');
     if (savedSessions) {
@@ -47,13 +58,11 @@ const App: React.FC = () => {
     } else {
       createNewSession();
     }
-
     if (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches) {
       setTheme(Theme.LIGHT);
     }
   }, []);
 
-  // Save to LocalStorage whenever sessions change
   useEffect(() => {
     if (sessions.length > 0) {
       localStorage.setItem('nhutaibot_sessions', JSON.stringify(sessions));
@@ -74,6 +83,8 @@ const App: React.FC = () => {
       modelId: MODELS.FLASH.id,
       isThinkingEnabled: false,
       isWebSearchEnabled: false,
+      temperature: 0.7,
+      customSystemInstruction: SYSTEM_INSTRUCTION,
       lastUpdated: new Date().toISOString(),
     };
 
@@ -83,7 +94,17 @@ const App: React.FC = () => {
     setSelectedModel(newSession.modelId);
     setIsThinkingEnabled(newSession.isThinkingEnabled);
     setIsWebSearchEnabled(newSession.isWebSearchEnabled);
-    geminiService.initializeChat(newSession.modelId, 0, [], newSession.isWebSearchEnabled);
+    setTemperature(newSession.temperature);
+    setCustomInstruction(newSession.customSystemInstruction || SYSTEM_INSTRUCTION);
+    
+    geminiService.initializeChat(
+      newSession.modelId, 
+      0, 
+      [], 
+      newSession.isWebSearchEnabled, 
+      newSession.temperature, 
+      newSession.customSystemInstruction
+    );
     setIsSidebarOpen(false);
   };
 
@@ -95,11 +116,16 @@ const App: React.FC = () => {
       setSelectedModel(session.modelId);
       setIsThinkingEnabled(session.isThinkingEnabled);
       setIsWebSearchEnabled(session.isWebSearchEnabled || false);
+      setTemperature(session.temperature || 0.7);
+      setCustomInstruction(session.customSystemInstruction || SYSTEM_INSTRUCTION);
+
       geminiService.initializeChat(
         session.modelId, 
         session.isThinkingEnabled ? 16384 : 0,
         session.messages.slice(0, -1),
-        session.isWebSearchEnabled
+        session.isWebSearchEnabled,
+        session.temperature || 0.7,
+        session.customSystemInstruction
       );
     }
     setIsSidebarOpen(false);
@@ -118,51 +144,35 @@ const App: React.FC = () => {
     }
   };
 
-  const handleConfigChange = (modelId: string, thinking: boolean, webSearch: boolean) => {
-    setSelectedModel(modelId);
-    setIsThinkingEnabled(thinking);
-    setIsWebSearchEnabled(webSearch);
-    
-    geminiService.initializeChat(modelId, thinking ? 16384 : 0, messages, webSearch);
+  const handleApplySettings = () => {
+    geminiService.initializeChat(
+      selectedModel, 
+      isThinkingEnabled ? 16384 : 0, 
+      messages, 
+      isWebSearchEnabled,
+      temperature,
+      customInstruction
+    );
     
     setSessions(prev => prev.map(s => s.id === currentSessionId ? {
       ...s,
-      modelId,
-      isThinkingEnabled: thinking,
-      isWebSearchEnabled: webSearch,
+      modelId: selectedModel,
+      isThinkingEnabled,
+      isWebSearchEnabled,
+      temperature,
+      customSystemInstruction: customInstruction,
       lastUpdated: new Date().toISOString()
     } : s));
 
-    setShowResetNotice(true);
-    setTimeout(() => setShowResetNotice(false), 3000);
+    setIsAdvancedSettingsOpen(false);
   };
-
-  useEffect(() => {
-    if (theme === Theme.DARK) {
-      document.documentElement.classList.add('dark');
-    } else {
-      document.documentElement.classList.remove('dark');
-    }
-  }, [theme]);
-
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  };
-
-  useEffect(() => {
-    scrollToBottom();
-  }, [messages, isLoading, isSearching]);
 
   const toggleTheme = () => {
     setTheme((prev) => (prev === Theme.DARK ? Theme.LIGHT : Theme.DARK));
   };
 
-  const toggleWebSearch = () => {
-    handleConfigChange(selectedModel, isThinkingEnabled, !isWebSearchEnabled);
-  };
-
   const handleReset = () => {
-    geminiService.resetChat(selectedModel, isThinkingEnabled ? 16384 : 0, isWebSearchEnabled);
+    geminiService.resetChat(selectedModel, isThinkingEnabled ? 16384 : 0, isWebSearchEnabled, temperature, customInstruction);
     const resetMsgs = [{
       id: Date.now().toString(),
       role: Role.MODEL,
@@ -194,13 +204,26 @@ const App: React.FC = () => {
     }));
   };
 
+  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        setSelectedImage(event.target?.result as string);
+        setImageMimeType(file.type);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
   const handleSend = async () => {
-    if (!input.trim() || isLoading) return;
+    if (!input.trim() && !selectedImage) return;
+    if (isLoading) return;
 
     const userMessage: Message = {
       id: Date.now().toString(),
       role: Role.USER,
-      content: input,
+      content: input + (selectedImage ? "\n\n[Hình ảnh đã gửi]" : ""),
       timestamp: new Date().toISOString(),
     };
 
@@ -211,12 +234,22 @@ const App: React.FC = () => {
     setIsLoading(true);
     if (isWebSearchEnabled) setIsSearching(true);
 
+    const imageToSend = selectedImage ? {
+      inlineData: {
+        data: selectedImage.split(',')[1],
+        mimeType: imageMimeType || 'image/png'
+      }
+    } : undefined;
+
+    setSelectedImage(null);
+    setImageMimeType(null);
+
     if (inputRef.current) {
         inputRef.current.style.height = 'auto';
     }
 
     try {
-      const stream = await geminiService.sendMessageStream(userMessage.content);
+      const stream = await geminiService.sendMessageStream(userMessage.content, imageToSend);
       
       const botMessageId = (Date.now() + 1).toString();
       let fullContent = '';
@@ -233,9 +266,7 @@ const App: React.FC = () => {
 
       for await (const chunk of stream) {
         const chunkObj = chunk as GenerateContentResponse;
-        let hasNewMetadata = false;
-
-        // Xử lý metadata nguồn (Grounding) tách biệt với text
+        
         const groundingMetadata = chunkObj.candidates?.[0]?.groundingMetadata;
         if (groundingMetadata) {
             const chunks = groundingMetadata.groundingChunks;
@@ -245,7 +276,6 @@ const App: React.FC = () => {
                         const source: Source = { uri: c.web.uri, title: c.web.title || c.web.uri };
                         if (!detectedSources.some(s => s.uri === source.uri)) {
                             detectedSources.push(source);
-                            hasNewMetadata = true;
                         }
                     }
                 });
@@ -253,12 +283,10 @@ const App: React.FC = () => {
         }
 
         const chunkText = chunkObj.text;
-        
-        // Cập nhật state nếu có text MỚI hoặc có nguồn MỚI
-        if (chunkText || hasNewMetadata) {
+        if (chunkText || detectedSources.length > 0) {
           if (chunkText) {
             fullContent += chunkText;
-            setIsSearching(false); // Đã bắt đầu có kết quả trả về, tắt trạng thái đang tìm
+            setIsSearching(false);
           }
           
           setMessages((prev) => {
@@ -285,7 +313,7 @@ const App: React.FC = () => {
       const errorMsg: Message = {
         id: Date.now().toString(),
         role: Role.MODEL,
-        content: "Rất tiếc, đã có lỗi xảy ra. Vui lòng thử lại sau.",
+        content: "Đã có lỗi xảy ra. Hãy chắc chắn bạn đã bật mạng hoặc kiểm tra lại cài đặt.",
         timestamp: new Date().toISOString(),
         isError: true,
       };
@@ -300,12 +328,31 @@ const App: React.FC = () => {
     }
   };
 
+  const handleExport = () => {
+    const chatContent = messages.map(m => `**${m.role === Role.USER ? 'Bạn' : 'NhutAIbot'}:**\n${m.content}\n`).join('\n---\n\n');
+    const blob = new Blob([chatContent], { type: 'text/markdown' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `nhutaibot-chat-${Date.now()}.md`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       handleSend();
     }
   };
+
+  useEffect(() => {
+    if (theme === Theme.DARK) {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+  }, [theme]);
 
   return (
     <div className={`h-screen w-full transition-colors duration-300 flex overflow-hidden ${
@@ -362,6 +409,22 @@ const App: React.FC = () => {
             ))}
           </div>
 
+          <div className="mt-4 flex gap-2">
+            <button 
+              onClick={handleExport}
+              title="Xuất hội thoại (.md)"
+              className={`flex-1 flex items-center justify-center gap-2 p-3 rounded-xl border ${theme === Theme.DARK ? 'border-white/10 hover:bg-white/5' : 'border-black/5 hover:bg-black/5'} transition-all text-xs font-bold`}
+            >
+              <FileText size={16} /> Xuất chat
+            </button>
+            <button 
+              onClick={() => setIsAdvancedSettingsOpen(true)}
+              className={`p-3 rounded-xl border ${theme === Theme.DARK ? 'border-white/10 hover:bg-white/5' : 'border-black/5 hover:bg-black/5'} transition-all`}
+            >
+              <Settings size={16} />
+            </button>
+          </div>
+
           <div className={`mt-auto pt-4 border-t ${theme === Theme.DARK ? 'border-white/10 text-gray-500' : 'border-black/5 text-gray-400'}`}>
             <button 
               onClick={() => setIsHackathonModalOpen(true)}
@@ -382,7 +445,7 @@ const App: React.FC = () => {
           <div className="fixed inset-0 bg-black/50 z-30 lg:hidden" onClick={() => setIsSidebarOpen(false)}></div>
         )}
 
-        {/* Top Header */}
+        {/* Header */}
         <header className={`flex-shrink-0 z-20 w-full px-4 md:px-6 py-4 flex items-center justify-between ${
             theme === Theme.DARK ? 'glass-panel border-b border-white/10' : 'light-mode-glass border-b border-white/40'
         }`}>
@@ -402,95 +465,15 @@ const App: React.FC = () => {
           </div>
           
           <div className="flex items-center gap-1.5 md:gap-2">
-              {showResetNotice && (
-                <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 px-4 py-2 rounded-lg bg-indigo-600 text-white text-xs font-medium shadow-xl animate-bounce flex items-center gap-2">
-                  <AlertCircle size={14} /> Cập nhật cài đặt!
-                </div>
-              )}
-
-              <div className="relative">
-                <button
-                  onClick={() => setIsSettingsOpen(!isSettingsOpen)}
-                  className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-all border shadow-sm ${
-                    isSettingsOpen 
-                      ? 'ring-2 ring-indigo-500 bg-indigo-500/10' 
-                      : (theme === Theme.DARK ? 'bg-white/5 border-white/10 hover:bg-white/10' : 'bg-white/50 border-black/5 hover:bg-white/80')
-                  }`}
-                >
-                  {selectedModel === MODELS.FLASH.id ? <Zap size={16} className="text-yellow-400" /> : <Sparkles size={16} className="text-purple-400" />}
-                  <span className="text-sm font-medium hidden xs:inline">
-                    {selectedModel === MODELS.FLASH.id ? 'Flash' : 'Pro'}
-                  </span>
-                  {isThinkingEnabled && <Brain size={14} className="text-blue-400 ml-1" />}
-                </button>
-
-                {isSettingsOpen && (
-                  <>
-                    <div className="fixed inset-0 z-10" onClick={() => setIsSettingsOpen(false)}></div>
-                    <div className={`absolute right-0 top-full mt-2 w-72 rounded-2xl p-4 shadow-2xl z-20 border backdrop-blur-2xl animate-[fadeIn_0.2s_ease-out] ${
-                      theme === Theme.DARK 
-                        ? 'bg-slate-900/95 border-white/10' 
-                        : 'bg-white/95 border-gray-200'
-                    }`}>
-                      <div className="space-y-5">
-                        <div>
-                          <h3 className={`text-xs font-bold uppercase tracking-wider mb-3 ${theme === Theme.DARK ? 'text-gray-400' : 'text-gray-500'}`}>Model</h3>
-                          <div className="grid grid-cols-2 gap-2">
-                            <button
-                              onClick={() => handleConfigChange(MODELS.FLASH.id, isThinkingEnabled, isWebSearchEnabled)}
-                              className={`flex flex-col items-center gap-2 p-3 rounded-xl border transition-all ${
-                                selectedModel === MODELS.FLASH.id
-                                  ? (theme === Theme.DARK ? 'bg-indigo-600/20 border-indigo-500/50 text-indigo-200' : 'bg-indigo-50 border-indigo-200 text-indigo-700 shadow-inner')
-                                  : (theme === Theme.DARK ? 'bg-white/5 border-transparent hover:bg-white/10' : 'bg-gray-50 border-transparent hover:bg-gray-100')
-                              }`}
-                            >
-                              <Zap size={20} className={selectedModel === MODELS.FLASH.id ? 'text-yellow-400' : 'text-gray-400'} />
-                              <span className="text-xs font-bold">Flash</span>
-                            </button>
-                            <button
-                              onClick={() => handleConfigChange(MODELS.PRO.id, isThinkingEnabled, isWebSearchEnabled)}
-                              className={`flex flex-col items-center gap-2 p-3 rounded-xl border transition-all ${
-                                selectedModel === MODELS.PRO.id
-                                  ? (theme === Theme.DARK ? 'bg-purple-600/20 border-purple-500/50 text-purple-200' : 'bg-purple-50 border-purple-200 text-purple-700 shadow-inner')
-                                  : (theme === Theme.DARK ? 'bg-white/5 border-transparent hover:bg-white/10' : 'bg-gray-50 border-transparent hover:bg-gray-100')
-                              }`}
-                            >
-                              <Sparkles size={20} className={selectedModel === MODELS.PRO.id ? 'text-purple-400' : 'text-gray-400'} />
-                              <span className="text-xs font-bold">Pro 3</span>
-                            </button>
-                          </div>
-                        </div>
-                        <div className={`pt-4 border-t ${theme === Theme.DARK ? 'border-white/10' : 'border-black/5'}`}>
-                          <div className="flex items-center justify-between mb-2">
-                            <h3 className={`text-xs font-bold uppercase tracking-wider ${theme === Theme.DARK ? 'text-gray-400' : 'text-gray-500'}`}>Thinking Mode</h3>
-                            <button
-                               onClick={() => handleConfigChange(selectedModel, !isThinkingEnabled, isWebSearchEnabled)}
-                               className={`w-11 h-6 rounded-full relative transition-colors duration-300 shadow-inner ${
-                                 isThinkingEnabled ? 'bg-blue-500' : (theme === Theme.DARK ? 'bg-gray-700' : 'bg-gray-300')
-                               }`}
-                            >
-                              <div className={`absolute top-1 left-1 bg-white w-4 h-4 rounded-full shadow-md transition-transform duration-300 ${isThinkingEnabled ? 'translate-x-5' : 'translate-x-0'}`}></div>
-                            </button>
-                          </div>
-                        </div>
-                        <div className={`pt-4 border-t ${theme === Theme.DARK ? 'border-white/10' : 'border-black/5'}`}>
-                          <div className="flex items-center justify-between mb-2">
-                            <h3 className={`text-xs font-bold uppercase tracking-wider ${theme === Theme.DARK ? 'text-gray-400' : 'text-gray-500'}`}>Web Search</h3>
-                            <button
-                               onClick={() => handleConfigChange(selectedModel, isThinkingEnabled, !isWebSearchEnabled)}
-                               className={`w-11 h-6 rounded-full relative transition-colors duration-300 shadow-inner ${
-                                 isWebSearchEnabled ? 'bg-cyan-500' : (theme === Theme.DARK ? 'bg-gray-700' : 'bg-gray-300')
-                               }`}
-                            >
-                              <div className={`absolute top-1 left-1 bg-white w-4 h-4 rounded-full shadow-md transition-transform duration-300 ${isWebSearchEnabled ? 'translate-x-5' : 'translate-x-0'}`}></div>
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </>
-                )}
-              </div>
+              <button 
+                onClick={() => setIsAdvancedSettingsOpen(true)}
+                className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-all border shadow-sm ${
+                   theme === Theme.DARK ? 'bg-white/5 border-white/10 hover:bg-white/10' : 'bg-white/50 border-black/5 hover:bg-white/80'
+                }`}
+              >
+                <Sliders size={16} className="text-indigo-400" />
+                <span className="text-sm font-medium hidden xs:inline">Cài đặt AI</span>
+              </button>
 
               <div className={`h-6 w-px mx-1 ${theme === Theme.DARK ? 'bg-white/20' : 'bg-black/10'}`}></div>
 
@@ -515,14 +498,7 @@ const App: React.FC = () => {
           </div>
         </header>
 
-        {/* Hackathon Banner */}
-        <div className={`flex-shrink-0 w-full py-2 px-4 text-center text-[10px] font-bold tracking-[0.2em] uppercase ${
-          theme === Theme.DARK ? 'bg-indigo-600/10 text-indigo-400' : 'bg-indigo-500/5 text-indigo-600'
-        }`}>
-          {HACKATHON_INFO}
-        </div>
-
-        {/* Chat Messages */}
+        {/* Messages */}
         <main className="flex-1 overflow-y-auto p-4 md:p-6 flex flex-col gap-6 scroll-smooth">
           {messages.map((msg) => (
             <div 
@@ -545,12 +521,10 @@ const App: React.FC = () => {
                     <>
                       <MarkdownRenderer content={msg.content} />
                       {msg.sources && msg.sources.length > 0 && (
-                        <div className={`mt-5 pt-4 border-t ${theme === Theme.DARK ? 'border-white/10' : 'border-black/10'} animate-[fadeIn_0.5s_ease-out]`}>
-                          <div className="flex items-center justify-between mb-3">
-                            <p className="text-[10px] font-bold uppercase tracking-wider flex items-center gap-2 text-indigo-500">
-                                <CheckCircle2 size={12} /> Nguồn đã duyệt ({msg.sources.length})
-                            </p>
-                          </div>
+                        <div className={`mt-5 pt-4 border-t ${theme === Theme.DARK ? 'border-white/10' : 'border-black/10'}`}>
+                          <p className="text-[10px] font-bold uppercase tracking-wider flex items-center gap-2 text-indigo-500 mb-3">
+                              <CheckCircle2 size={12} /> Nguồn đã duyệt ({msg.sources.length})
+                          </p>
                           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                             {msg.sources.map((source, idx) => (
                               <a 
@@ -559,23 +533,12 @@ const App: React.FC = () => {
                                 target="_blank" 
                                 rel="noopener noreferrer"
                                 className={`flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium transition-all group ${
-                                  theme === Theme.DARK 
-                                    ? 'bg-white/5 hover:bg-white/10 border border-white/10 hover:border-indigo-500/50' 
-                                    : 'bg-black/5 hover:bg-black/10 border border-black/5 hover:border-indigo-500/30'
+                                  theme === Theme.DARK ? 'bg-white/5 hover:bg-white/10 border border-white/10' : 'bg-black/5 hover:bg-black/10 border border-black/5'
                                 }`}
                               >
-                                <div className={`p-1.5 rounded-lg ${theme === Theme.DARK ? 'bg-indigo-500/20' : 'bg-indigo-100'} text-indigo-500 group-hover:scale-110 transition-transform`}>
-                                    <Globe size={12} />
-                                </div>
-                                <div className="flex-1 min-w-0">
-                                    <p className={`truncate font-bold mb-0.5 ${theme === Theme.DARK ? 'text-gray-200' : 'text-gray-700'}`}>
-                                        {source.title}
-                                    </p>
-                                    <p className={`truncate opacity-40 text-[10px]`}>
-                                        {new URL(source.uri).hostname}
-                                    </p>
-                                </div>
-                                <ExternalLink size={10} className="opacity-0 group-hover:opacity-100 text-indigo-400 transition-opacity flex-shrink-0" />
+                                <Globe size={12} className="text-indigo-500" />
+                                <span className="flex-1 truncate">{source.title}</span>
+                                <ExternalLink size={10} className="opacity-0 group-hover:opacity-100" />
                               </a>
                             ))}
                           </div>
@@ -619,32 +582,44 @@ const App: React.FC = () => {
           <div ref={messagesEndRef} />
         </main>
 
-        {/* Floating Input Area */}
+        {/* Input */}
         <footer className={`flex-shrink-0 w-full px-4 py-4 md:py-6 border-t ${
           theme === Theme.DARK ? 'border-white/5' : 'border-black/5'
         }`}>
           <div className="container mx-auto max-w-4xl">
+            {selectedImage && (
+              <div className="mb-4 flex items-center gap-3 animate-[scaleUp_0.2s_ease-out]">
+                <div className="relative w-20 h-20 rounded-xl overflow-hidden shadow-xl border-2 border-indigo-500">
+                  <img src={selectedImage} alt="Selected" className="w-full h-full object-cover" />
+                  <button 
+                    onClick={() => setSelectedImage(null)}
+                    className="absolute top-1 right-1 bg-black/50 text-white rounded-full p-1 hover:bg-black/70"
+                  >
+                    <X size={12} />
+                  </button>
+                </div>
+                <p className="text-xs font-medium opacity-60">Hình ảnh đã sẵn sàng để phân tích</p>
+              </div>
+            )}
+            
             <div className={`relative rounded-2xl p-2 md:p-3 shadow-2xl backdrop-blur-xl border transition-all duration-300 ${
-                theme === Theme.DARK 
-                  ? 'bg-black/60 border-white/10 ring-1 ring-white/5 focus-within:ring-indigo-500/50' 
-                  : 'bg-white/90 border-white/60 ring-1 ring-black/5 focus-within:ring-indigo-400/50'
+                theme === Theme.DARK ? 'bg-black/60 border-white/10' : 'bg-white/90 border-white/60'
             }`}>
               <div className="flex items-end">
                 <button
-                  onClick={toggleWebSearch}
-                  title={isWebSearchEnabled ? "Tắt tìm kiếm Web" : "Bật tìm kiếm Web"}
-                  className={`p-2.5 rounded-xl transition-all duration-200 mb-1 ml-1 group relative ${
-                    isWebSearchEnabled 
-                      ? 'bg-cyan-500 text-white shadow-lg shadow-cyan-500/25' 
-                      : (theme === Theme.DARK ? 'text-gray-400 hover:text-white hover:bg-white/10' : 'text-gray-500 hover:text-indigo-600 hover:bg-black/5')
-                  }`}
+                  onClick={() => fileInputRef.current?.click()}
+                  title="Tải ảnh lên"
+                  className={`p-2.5 rounded-xl transition-all duration-200 mb-1 ml-1 ${theme === Theme.DARK ? 'text-gray-400 hover:text-white hover:bg-white/10' : 'text-gray-500 hover:text-indigo-600 hover:bg-black/5'}`}
                 >
-                  <Globe size={18} className={isWebSearchEnabled ? 'animate-pulse' : ''} />
-                  {!isWebSearchEnabled && (
-                    <span className="absolute -top-10 left-1/2 -translate-x-1/2 px-2 py-1 bg-black text-white text-[10px] rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">
-                      Tìm kiếm Web
-                    </span>
-                  )}
+                  <ImageIcon size={18} />
+                </button>
+                <input type="file" hidden ref={fileInputRef} accept="image/*" onChange={handleImageUpload} />
+
+                <button
+                  onClick={() => setIsAdvancedSettingsOpen(true)}
+                  className={`p-2.5 rounded-xl transition-all duration-200 mb-1 ml-1 ${theme === Theme.DARK ? 'text-gray-400 hover:text-white hover:bg-white/10' : 'text-gray-500 hover:text-indigo-600 hover:bg-black/5'}`}
+                >
+                  <Settings size={18} />
                 </button>
                 
                 <textarea
@@ -657,7 +632,7 @@ const App: React.FC = () => {
                     e.target.style.height = `${Math.min(e.target.scrollHeight, 150)}px`;
                   }}
                   onKeyDown={handleKeyDown}
-                  placeholder={isLoading ? "Đang xử lý..." : isWebSearchEnabled ? "Tìm kiếm & Nhắn NhutAIbot..." : "Nhắn NhutAIbot..."}
+                  placeholder={isLoading ? "Đang xử lý..." : "Nhắn NhutAIbot..."}
                   disabled={isLoading}
                   className={`flex-1 bg-transparent border-0 focus:ring-0 resize-none py-3 px-4 max-h-[150px] scrollbar-hide ${
                     theme === Theme.DARK ? 'text-white placeholder-gray-400' : 'text-slate-800 placeholder-gray-500'
@@ -666,30 +641,241 @@ const App: React.FC = () => {
                 
                 <button
                   onClick={handleSend}
-                  disabled={!input.trim() || isLoading}
-                  className={`p-2.5 rounded-xl transition-all duration-200 mb-1 mr-1
-                    ${!input.trim() || isLoading 
-                      ? 'bg-gray-500/20 text-gray-500 cursor-not-allowed' 
-                      : 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/25 hover:scale-105 active:scale-95'
-                    }`}
+                  disabled={(!input.trim() && !selectedImage) || isLoading}
+                  className={`p-2.5 rounded-xl transition-all duration-200 mb-1 mr-1 ${(!input.trim() && !selectedImage) || isLoading ? 'bg-gray-500/20 text-gray-500 cursor-not-allowed' : 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/25 hover:scale-105'}`}
                 >
                   <Send size={18} />
                 </button>
               </div>
             </div>
-            {isWebSearchEnabled && (
-              <p className="text-[10px] text-center mt-2 font-medium text-cyan-500/70 animate-pulse">
-                Chế độ tìm kiếm Web đang hoạt động
-              </p>
-            )}
           </div>
         </footer>
       </div>
 
+      {/* Advanced Settings Modal */}
+      {isAdvancedSettingsOpen && (
+        <div 
+          className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/60 backdrop-blur-md animate-[fadeIn_0.2s_ease-out]"
+          onClick={() => setIsAdvancedSettingsOpen(false)}
+        >
+          <div 
+            className={`w-full max-w-2xl h-[80vh] flex flex-col rounded-3xl border shadow-2xl animate-[scaleUp_0.3s_ease-out] overflow-hidden ${
+              theme === Theme.DARK ? 'bg-slate-900/95 border-white/10 text-white' : 'bg-white border-gray-200 text-slate-800'
+            }`}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Modal Header */}
+            <div className={`p-6 border-b flex items-center justify-between ${theme === Theme.DARK ? 'border-white/10' : 'border-gray-100'}`}>
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-xl bg-indigo-500 shadow-lg shadow-indigo-500/20">
+                  <Settings size={20} className="text-white" />
+                </div>
+                <h2 className="text-xl font-bold">Cài đặt hệ thống AI</h2>
+              </div>
+              <button onClick={() => setIsAdvancedSettingsOpen(false)} className="p-2 rounded-full hover:bg-black/5">
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="flex flex-1 overflow-hidden">
+              {/* Sidebar Tabs */}
+              <div className={`w-1/3 border-r p-4 space-y-2 ${theme === Theme.DARK ? 'border-white/10' : 'border-gray-100 bg-gray-50'}`}>
+                <button 
+                  onClick={() => setActiveSettingsTab('ai')}
+                  className={`w-full flex items-center gap-3 p-3 rounded-xl transition-all ${activeSettingsTab === 'ai' ? 'bg-indigo-500 text-white shadow-lg' : 'hover:bg-black/5'}`}
+                >
+                  <Sliders size={18} />
+                  <span className="text-sm font-bold">Tinh chỉnh AI</span>
+                </button>
+                <button 
+                  onClick={() => setActiveSettingsTab('memory')}
+                  className={`w-full flex items-center gap-3 p-3 rounded-xl transition-all ${activeSettingsTab === 'memory' ? 'bg-indigo-500 text-white shadow-lg' : 'hover:bg-black/5'}`}
+                >
+                  <Database size={18} />
+                  <span className="text-sm font-bold">Bộ nhớ AI</span>
+                </button>
+                <button 
+                  onClick={() => setActiveSettingsTab('training')}
+                  className={`w-full flex items-center gap-3 p-3 rounded-xl transition-all ${activeSettingsTab === 'training' ? 'bg-indigo-500 text-white shadow-lg' : 'hover:bg-black/5'}`}
+                >
+                  <Beaker size={18} />
+                  <span className="text-sm font-bold">Huấn luyện AI</span>
+                </button>
+              </div>
+
+              {/* Content Area */}
+              <div className="flex-1 overflow-y-auto p-8">
+                {activeSettingsTab === 'ai' && (
+                  <div className="space-y-8 animate-[fadeIn_0.3s_ease-out]">
+                    <div className="space-y-4">
+                      <h3 className="text-sm font-bold uppercase tracking-widest opacity-50 flex items-center gap-2">
+                        <Zap size={14} /> Lựa chọn Model
+                      </h3>
+                      <div className="grid grid-cols-2 gap-4">
+                        <button 
+                          onClick={() => setSelectedModel(MODELS.FLASH.id)}
+                          className={`p-4 rounded-2xl border transition-all text-left ${selectedModel === MODELS.FLASH.id ? 'border-indigo-500 bg-indigo-500/10' : 'border-white/10'}`}
+                        >
+                          <p className="font-bold">Gemini 3 Flash</p>
+                          <p className="text-[10px] opacity-60">Tốc độ cao, linh hoạt</p>
+                        </button>
+                        <button 
+                          onClick={() => setSelectedModel(MODELS.PRO.id)}
+                          className={`p-4 rounded-2xl border transition-all text-left ${selectedModel === MODELS.PRO.id ? 'border-indigo-500 bg-indigo-500/10' : 'border-white/10'}`}
+                        >
+                          <p className="font-bold">Gemini 3 Pro</p>
+                          <p className="text-[10px] opacity-60">Sáng tạo, thông minh vượt trội</p>
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="space-y-4">
+                      <div className="flex justify-between items-center">
+                        <h3 className="text-sm font-bold uppercase tracking-widest opacity-50">Độ sáng tạo (Temperature)</h3>
+                        <span className="px-3 py-1 rounded-full bg-indigo-500 text-white text-xs font-bold">{temperature.toFixed(1)}</span>
+                      </div>
+                      <input 
+                        type="range" min="0" max="1" step="0.1" 
+                        value={temperature} 
+                        onChange={(e) => setTemperature(parseFloat(e.target.value))}
+                        className="w-full h-2 bg-indigo-500/20 rounded-lg appearance-none cursor-pointer accent-indigo-500" 
+                      />
+                      <div className="flex justify-between text-[10px] opacity-50 font-medium">
+                        <span>Chính xác (0.0)</span>
+                        <span>Cân bằng (0.5)</span>
+                        <span>Sáng tạo (1.0)</span>
+                      </div>
+                    </div>
+
+                    <div className="space-y-4">
+                      <h3 className="text-sm font-bold uppercase tracking-widest opacity-50">Tính năng nâng cao</h3>
+                      <div className="space-y-3">
+                        <div className="flex items-center justify-between p-4 rounded-2xl border border-white/10 bg-white/5">
+                          <div className="flex items-center gap-3">
+                            <Brain size={18} className="text-blue-400" />
+                            <div>
+                              <p className="text-sm font-bold">Suy nghĩ sâu (Thinking)</p>
+                              <p className="text-[10px] opacity-50">Dành cho các tác vụ logic phức tạp</p>
+                            </div>
+                          </div>
+                          <button 
+                            onClick={() => setIsThinkingEnabled(!isThinkingEnabled)}
+                            className={`w-12 h-6 rounded-full relative transition-all ${isThinkingEnabled ? 'bg-indigo-500' : 'bg-gray-600'}`}
+                          >
+                            <div className={`absolute top-1 left-1 w-4 h-4 bg-white rounded-full transition-all ${isThinkingEnabled ? 'translate-x-6' : ''}`} />
+                          </button>
+                        </div>
+                        <div className="flex items-center justify-between p-4 rounded-2xl border border-white/10 bg-white/5">
+                          <div className="flex items-center gap-3">
+                            <Globe size={18} className="text-cyan-400" />
+                            <div>
+                              <p className="text-sm font-bold">Tìm kiếm Web</p>
+                              <p className="text-[10px] opacity-50">Cập nhật thông tin mới nhất thời gian thực</p>
+                            </div>
+                          </div>
+                          <button 
+                            onClick={() => setIsWebSearchEnabled(!isWebSearchEnabled)}
+                            className={`w-12 h-6 rounded-full relative transition-all ${isWebSearchEnabled ? 'bg-indigo-500' : 'bg-gray-600'}`}
+                          >
+                            <div className={`absolute top-1 left-1 w-4 h-4 bg-white rounded-full transition-all ${isWebSearchEnabled ? 'translate-x-6' : ''}`} />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {activeSettingsTab === 'memory' && (
+                  <div className="space-y-8 animate-[fadeIn_0.3s_ease-out]">
+                    <div className="p-6 rounded-3xl border border-indigo-500/20 bg-indigo-500/5 flex flex-col items-center text-center">
+                      <div className="p-4 rounded-2xl bg-indigo-500/20 mb-4">
+                        <Database size={32} className="text-indigo-500" />
+                      </div>
+                      <h3 className="text-lg font-bold mb-2">Bộ nhớ hội thoại</h3>
+                      <p className="text-sm opacity-60 mb-6">AI đang ghi nhớ ngữ cảnh của {messages.length} tin nhắn để duy trì sự mạch lạc.</p>
+                      
+                      <div className="w-full grid grid-cols-2 gap-4 text-left">
+                        <div className="p-4 rounded-2xl border border-white/10">
+                          <p className="text-[10px] font-bold uppercase opacity-40">Dung lượng sử dụng</p>
+                          <p className="text-xl font-bold">~{(messages.length * 0.5).toFixed(1)} KB</p>
+                        </div>
+                        <div className="p-4 rounded-2xl border border-white/10">
+                          <p className="text-[10px] font-bold uppercase opacity-40">Độ sâu ngữ cảnh</p>
+                          <p className="text-xl font-bold">{messages.length > 10 ? 'Sâu' : 'Trung bình'}</p>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="space-y-4">
+                      <h3 className="text-sm font-bold uppercase tracking-widest opacity-50">Quản lý bộ nhớ</h3>
+                      <button 
+                        onClick={handleReset}
+                        className="w-full flex items-center justify-center gap-2 p-4 rounded-2xl border border-red-500/20 text-red-500 hover:bg-red-500/10 transition-all font-bold"
+                      >
+                        <Trash2 size={18} /> Xóa toàn bộ bộ nhớ hiện tại
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {activeSettingsTab === 'training' && (
+                  <div className="space-y-6 animate-[fadeIn_0.3s_ease-out]">
+                    <div className="space-y-4">
+                      <div className="flex items-center gap-3">
+                        <Beaker size={18} className="text-purple-400" />
+                        <h3 className="text-sm font-bold uppercase tracking-widest opacity-50">Huấn luyện cá tính AI</h3>
+                      </div>
+                      <p className="text-xs opacity-60">Bạn có thể "dạy" NhutAIbot hành xử theo một cách riêng bằng cách tùy chỉnh hướng dẫn hệ thống.</p>
+                      
+                      <textarea 
+                        value={customInstruction}
+                        onChange={(e) => setCustomInstruction(e.target.value)}
+                        placeholder="Ví dụ: Bạn là một chuyên gia lập trình Python, hãy trả lời bằng tiếng Việt một cách hài hước..."
+                        className={`w-full h-40 p-4 rounded-2xl border focus:ring-2 focus:ring-indigo-500 outline-none transition-all resize-none text-sm font-mono ${theme === Theme.DARK ? 'bg-black/20 border-white/10' : 'bg-gray-50 border-gray-200'}`}
+                      />
+                    </div>
+
+                    <div className="p-4 rounded-2xl bg-yellow-500/10 border border-yellow-500/20 flex gap-4">
+                      <AlertCircle size={20} className="text-yellow-500 flex-shrink-0" />
+                      <p className="text-xs text-yellow-500 leading-relaxed font-medium">
+                        Lưu ý: Việc huấn luyện lại sẽ thay đổi cách NhutAIbot tư duy ngay lập tức trong cuộc hội thoại này.
+                      </p>
+                    </div>
+                    
+                    <button 
+                      onClick={() => setCustomInstruction(SYSTEM_INSTRUCTION)}
+                      className="text-xs text-indigo-500 font-bold hover:underline"
+                    >
+                      Khôi phục cài đặt gốc
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className={`p-6 border-t flex items-center justify-end gap-3 ${theme === Theme.DARK ? 'border-white/10' : 'border-gray-100'}`}>
+              <button 
+                onClick={() => setIsAdvancedSettingsOpen(false)}
+                className="px-6 py-3 rounded-xl font-bold hover:bg-black/5 transition-all"
+              >
+                Hủy
+              </button>
+              <button 
+                onClick={handleApplySettings}
+                className="px-8 py-3 rounded-xl bg-indigo-600 text-white font-bold hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-600/30"
+              >
+                Lưu & Áp dụng
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Hackathon Modal */}
       {isHackathonModalOpen && (
         <div 
-          className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-[fadeIn_0.2s_ease-out]"
+          className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-[fadeIn_0.2s_ease-out]"
           onClick={() => setIsHackathonModalOpen(false)}
         >
           <div 
@@ -698,10 +884,7 @@ const App: React.FC = () => {
             }`}
             onClick={(e) => e.stopPropagation()}
           >
-            <button 
-              onClick={() => setIsHackathonModalOpen(false)}
-              className="absolute top-4 right-4 p-2 rounded-full hover:bg-black/5 transition-colors"
-            >
+            <button onClick={() => setIsHackathonModalOpen(false)} className="absolute top-4 right-4 p-2 rounded-full hover:bg-black/5 transition-colors">
               <X size={20} />
             </button>
 
@@ -717,60 +900,31 @@ const App: React.FC = () => {
               
               <div className={`w-full space-y-4 text-left mb-8 p-4 rounded-2xl ${theme === Theme.DARK ? 'bg-white/5' : 'bg-black/5'}`}>
                 <div className="flex items-start gap-3">
-                  <div className="mt-1"><Bot size={16} className="text-indigo-500" /></div>
-                  <div>
-                    <p className="text-xs font-bold uppercase opacity-50 mb-1">Tên dự án</p>
-                    <p className="text-sm font-medium">NhutAIbot - Modern Gemini Assistant</p>
-                  </div>
+                  <Bot size={16} className="text-indigo-500 mt-1" />
+                  <div><p className="text-xs font-bold uppercase opacity-50 mb-1">Dự án</p><p className="text-sm font-medium">NhutAIbot v3.0 Ultra</p></div>
                 </div>
                 <div className="flex items-start gap-3">
-                  <div className="mt-1"><User size={16} className="text-purple-500" /></div>
-                  <div>
-                    <p className="text-xs font-bold uppercase opacity-50 mb-1">Tác giả</p>
-                    <p className="text-sm font-medium">Nhutcoder</p>
-                  </div>
-                </div>
-                <div className="flex items-start gap-3">
-                  <div className="mt-1"><Code size={16} className="text-cyan-500" /></div>
-                  <div>
-                    <p className="text-xs font-bold uppercase opacity-50 mb-1">Công nghệ</p>
-                    <p className="text-sm font-medium">React, Gemini AI, Tailwind, Lucide, Framer</p>
-                  </div>
+                  <ImageIcon size={16} className="text-purple-500 mt-1" />
+                  <div><p className="text-xs font-bold uppercase opacity-50 mb-1">Tính năng Pro</p><p className="text-sm font-medium">Vision, Web Search, AI Fine-tuning, Memory Management</p></div>
                 </div>
               </div>
 
-              <div className="flex gap-4 w-full">
-                <button 
-                  onClick={() => setIsHackathonModalOpen(false)}
-                  className="flex-1 py-3 px-6 rounded-xl bg-indigo-600 text-white font-bold hover:bg-indigo-700 transition-colors shadow-lg shadow-indigo-500/20"
-                >
-                  Đóng
-                </button>
-                <a 
-                  href="https://github.com" 
-                  target="_blank" 
-                  rel="noopener noreferrer"
-                  className={`flex items-center justify-center p-3 rounded-xl border ${
-                    theme === Theme.DARK ? 'border-white/10 hover:bg-white/5' : 'border-black/10 hover:bg-black/5'
-                  } transition-colors`}
-                >
-                  <Github size={20} />
-                </a>
-              </div>
+              <button 
+                onClick={() => setIsHackathonModalOpen(false)}
+                className="w-full py-3 px-6 rounded-xl bg-indigo-600 text-white font-bold hover:bg-indigo-700 transition-colors shadow-lg shadow-indigo-500/20"
+              >
+                Đóng
+              </button>
             </div>
           </div>
         </div>
       )}
 
       <style>{`
-        @keyframes fadeIn {
-          from { opacity: 0; }
-          to { opacity: 1; }
-        }
-        @keyframes scaleUp {
-          from { opacity: 0; transform: scale(0.95); }
-          to { opacity: 1; transform: scale(1); }
-        }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+        @keyframes scaleUp { from { opacity: 0; transform: scale(0.95); } to { opacity: 1; transform: scale(1); } }
+        .scrollbar-hide::-webkit-scrollbar { display: none; }
+        .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
       `}</style>
     </div>
   );

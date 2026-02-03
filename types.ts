@@ -25,6 +25,8 @@ export interface ChatSessionData {
   modelId: string;
   isThinkingEnabled: boolean;
   isWebSearchEnabled: boolean;
+  temperature: number;
+  customSystemInstruction?: string;
   lastUpdated: string;
 }
 

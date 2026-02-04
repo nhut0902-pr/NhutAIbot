@@ -4,12 +4,13 @@ import {
   Send, Moon, Sun, RotateCcw, Bot, User, Cpu, Settings, Zap, 
   Sparkles, Brain, X, History, Plus, Trash2, MessageSquare, 
   Menu, Globe, ExternalLink, Award, Search, CheckCircle2, 
-  Image as ImageIcon, FileText, Sliders, Database, Beaker, Languages
+  Image as ImageIcon, FileText, Sliders, Database, Beaker, Languages,
+  Share2, PenTool, BarChart3, Code, Terminal
 } from 'lucide-react';
 import { GenerateContentResponse } from "@google/genai";
 
 import { Message, Role, Theme, ChatSessionData, Source, Language } from './types';
-import { APP_NAME, TRANSLATIONS, MODELS, HACKATHON_INFO, getSystemInstruction } from './constants';
+import { APP_NAME, TRANSLATIONS, MODELS, HACKATHON_INFO, getSystemInstruction, PROMPT_LIBRARY } from './constants';
 import * as geminiService from './services/geminiService';
 import MarkdownRenderer from './components/MarkdownRenderer';
 import TypingIndicator from './components/TypingIndicator';
@@ -25,7 +26,11 @@ const App: React.FC = () => {
   const [language, setLanguage] = useState<Language>(Language.VI);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isAdvancedSettingsOpen, setIsAdvancedSettingsOpen] = useState(false);
+  const [isPromptLibraryOpen, setIsPromptLibraryOpen] = useState(false);
   const [activeSettingsTab, setActiveSettingsTab] = useState<'ai' | 'memory' | 'training'>('ai');
+  
+  // Memory State
+  const [userFacts, setUserFacts] = useState<string[]>([]);
   
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -42,6 +47,10 @@ const App: React.FC = () => {
 
   useEffect(() => {
     const savedSessions = localStorage.getItem('nhutaibot_sessions');
+    const savedFacts = localStorage.getItem('nhutaibot_facts');
+    
+    if (savedFacts) setUserFacts(JSON.parse(savedFacts));
+    
     if (savedSessions) {
       const parsed = JSON.parse(savedSessions);
       setSessions(parsed);
@@ -50,6 +59,7 @@ const App: React.FC = () => {
     } else {
       createNewSession();
     }
+    
     if (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches) {
       setTheme(Theme.LIGHT);
     }
@@ -58,6 +68,10 @@ const App: React.FC = () => {
   useEffect(() => {
     localStorage.setItem('nhutaibot_sessions', JSON.stringify(sessions));
   }, [sessions]);
+
+  useEffect(() => {
+    localStorage.setItem('nhutaibot_facts', JSON.stringify(userFacts));
+  }, [userFacts]);
 
   const createNewSession = () => {
     const newId = Date.now().toString();
@@ -80,7 +94,7 @@ const App: React.FC = () => {
     setSessions(prev => [newSession, ...prev]);
     setCurrentSessionId(newId);
     setMessages(newSession.messages);
-    geminiService.initializeChat(newSession.modelId, 0, [], false, 0.7, getSystemInstruction(language));
+    geminiService.initializeChat(newSession.modelId, 0, [], false, 0.7, getSystemInstruction(language, userFacts));
     setIsSidebarOpen(false);
   };
 
@@ -100,7 +114,7 @@ const App: React.FC = () => {
         session.messages.slice(0, -1),
         session.isWebSearchEnabled,
         session.temperature,
-        session.customSystemInstruction || getSystemInstruction(session.language || language)
+        session.customSystemInstruction || getSystemInstruction(session.language || language, userFacts)
       );
     }
     setIsSidebarOpen(false);
@@ -109,20 +123,14 @@ const App: React.FC = () => {
   const toggleLanguage = () => {
     const newLang = language === Language.VI ? Language.EN : Language.VI;
     setLanguage(newLang);
-    // Cập nhật hướng dẫn hệ thống ngay lập tức
     geminiService.initializeChat(
-      selectedModel,
-      isThinkingEnabled ? 16384 : 0,
-      messages,
-      isWebSearchEnabled,
-      temperature,
-      getSystemInstruction(newLang)
+      selectedModel, isThinkingEnabled ? 16384 : 0, messages, isWebSearchEnabled, temperature, getSystemInstruction(newLang, userFacts)
     );
   };
 
   const handleApplySettings = () => {
     geminiService.initializeChat(
-      selectedModel, isThinkingEnabled ? 16384 : 0, messages, isWebSearchEnabled, temperature, customInstruction || getSystemInstruction(language)
+      selectedModel, isThinkingEnabled ? 16384 : 0, messages, isWebSearchEnabled, temperature, customInstruction || getSystemInstruction(language, userFacts)
     );
     setSessions(prev => prev.map(s => s.id === currentSessionId ? {
       ...s, modelId: selectedModel, isThinkingEnabled, isWebSearchEnabled, temperature, customSystemInstruction: customInstruction, language, lastUpdated: new Date().toISOString()
@@ -130,27 +138,18 @@ const App: React.FC = () => {
     setIsAdvancedSettingsOpen(false);
   };
 
-  // Fixed: Implemented deleteSession
   const deleteSession = (e: React.MouseEvent, id: string) => {
     const updatedSessions = sessions.filter(s => s.id !== id);
     setSessions(updatedSessions);
     if (currentSessionId === id) {
-      if (updatedSessions.length > 0) {
-        loadSession(updatedSessions[0].id, updatedSessions);
-      } else {
-        createNewSession();
-      }
+      if (updatedSessions.length > 0) loadSession(updatedSessions[0].id, updatedSessions);
+      else createNewSession();
     }
   };
 
-  // Fixed: Implemented handleExport
   const handleExport = () => {
     const session = sessions.find(s => s.id === currentSessionId);
-    const exportData = {
-      ...session,
-      messages: messages,
-      exportedAt: new Date().toISOString()
-    };
+    const exportData = { ...session, messages: messages, exportedAt: new Date().toISOString() };
     const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -158,6 +157,18 @@ const App: React.FC = () => {
     a.download = `nhutaibot-chat-${currentSessionId}.json`;
     a.click();
     URL.revokeObjectURL(url);
+  };
+
+  const handleShareMessage = (message: Message) => {
+    const shareText = `--- NhutAIbot Snapshot ---\n\n${message.role === Role.USER ? 'User' : 'NhutAIbot'}:\n${message.content}\n\nJoin Nhutcoder Hackathon 2025!`;
+    navigator.clipboard.writeText(shareText);
+    alert('Conversation snapshot copied to clipboard!');
+  };
+
+  const applyPrompt = (prompt: string) => {
+    setInput(prompt);
+    setIsPromptLibraryOpen(false);
+    if (inputRef.current) inputRef.current.focus();
   };
 
   const handleSend = async () => {
@@ -172,6 +183,13 @@ const App: React.FC = () => {
     };
 
     setMessages(prev => [...prev, userMessage]);
+    
+    // Auto-Fact Extraction (Mockup heuristic)
+    if (input.toLowerCase().includes("tên tôi là") || input.toLowerCase().includes("my name is")) {
+      const parts = input.split(/là|is/i);
+      if (parts[1]) setUserFacts(prev => Array.from(new Set([...prev, `User's name is ${parts[1].trim()}`])));
+    }
+
     setInput('');
     setIsLoading(true);
     if (isWebSearchEnabled) setIsSearching(true);
@@ -207,6 +225,16 @@ const App: React.FC = () => {
     } finally {
       setIsLoading(false);
       setIsSearching(false);
+    }
+  };
+
+  const getIcon = (iconName: string) => {
+    switch(iconName) {
+      case 'Code': return <Code size={24} />;
+      case 'PenTool': return <PenTool size={24} />;
+      case 'Languages': return <Languages size={24} />;
+      case 'BarChart3': return <BarChart3 size={24} />;
+      default: return <Sparkles size={24} />;
     }
   };
 
@@ -293,9 +321,18 @@ const App: React.FC = () => {
                 <div className={`w-8 h-8 md:w-10 md:h-10 rounded-full flex items-center justify-center flex-shrink-0 shadow-lg ${m.role === Role.USER ? 'bg-indigo-600' : 'bg-slate-700 border border-slate-600'}`}>
                   {m.role === Role.USER ? <User size={18} className="text-white" /> : <Bot size={18} className="text-indigo-400" />}
                 </div>
-                <div className={`px-4 md:px-6 py-3.5 rounded-2xl text-sm md:text-base shadow-sm relative ${m.role === Role.USER ? 'bg-indigo-600 text-white rounded-tr-none' : (theme === Theme.DARK ? 'bg-slate-800 border border-slate-700 text-slate-200' : 'bg-white border border-slate-200 text-slate-800') + ' rounded-tl-none'}`}>
+                <div className={`group px-4 md:px-6 py-3.5 rounded-2xl text-sm md:text-base shadow-sm relative ${m.role === Role.USER ? 'bg-indigo-600 text-white rounded-tr-none' : (theme === Theme.DARK ? 'bg-slate-800 border border-slate-700 text-slate-200' : 'bg-white border border-slate-200 text-slate-800') + ' rounded-tl-none'}`}>
+                  
                   <MarkdownRenderer content={m.content} />
                   
+                  <button 
+                    onClick={() => handleShareMessage(m)}
+                    className="absolute -right-10 top-0 opacity-0 group-hover:opacity-100 p-2 text-slate-500 hover:text-indigo-500 transition-all"
+                    title={t.share}
+                  >
+                    <Share2 size={16} />
+                  </button>
+
                   {m.sources && m.sources.length > 0 && (
                     <div className="mt-4 pt-4 border-t border-slate-500/20">
                       <p className="text-[10px] font-bold uppercase tracking-widest text-indigo-400 mb-2 flex items-center gap-1">
@@ -331,6 +368,14 @@ const App: React.FC = () => {
         {/* Input area optimized for mobile */}
         <footer className={`p-4 md:p-8 flex-shrink-0 ${theme === Theme.DARK ? 'bg-[#0f172a]' : 'bg-slate-50'}`}>
           <div className="max-w-4xl mx-auto relative">
+            
+            {/* Action Bar */}
+            <div className="flex gap-2 mb-3">
+               <button onClick={() => setIsPromptLibraryOpen(true)} className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-[10px] font-bold uppercase border transition-all ${theme === Theme.DARK ? 'bg-indigo-500/10 border-indigo-500/30 text-indigo-400' : 'bg-indigo-50 border-indigo-200 text-indigo-600'}`}>
+                  <Sparkles size={12} /> {t.library}
+               </button>
+            </div>
+
             {selectedImage && (
               <div className="absolute -top-20 left-0 bg-slate-800 p-2 rounded-xl border border-slate-700 shadow-2xl animate-in zoom-in-50">
                 <img src={selectedImage} alt="Preview" className="h-14 w-14 object-cover rounded-lg" />
@@ -363,7 +408,35 @@ const App: React.FC = () => {
           </div>
         </footer>
 
-        {/* Settings Modal (Professional & Mobile Optimized) */}
+        {/* Prompt Library Modal */}
+        {isPromptLibraryOpen && (
+          <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/70 backdrop-blur-md animate-in fade-in duration-200" onClick={() => setIsPromptLibraryOpen(false)}>
+            <div className={`w-full max-w-2xl p-6 rounded-3xl border shadow-2xl ${theme === Theme.DARK ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`} onClick={e => e.stopPropagation()}>
+              <div className="flex items-center justify-between mb-8">
+                <div className="flex items-center gap-3">
+                   <div className="p-2 bg-indigo-500 rounded-xl"><Sparkles size={20} className="text-white" /></div>
+                   <h2 className="text-xl font-bold">{t.library}</h2>
+                </div>
+                <button onClick={() => setIsPromptLibraryOpen(false)} className="p-2 hover:bg-slate-500/10 rounded-full"><X size={20} /></button>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                 {PROMPT_LIBRARY.map(lib => (
+                   <button 
+                    key={lib.id} 
+                    onClick={() => applyPrompt(lib.prompt)}
+                    className={`flex flex-col items-start p-5 rounded-2xl border transition-all text-left ${theme === Theme.DARK ? 'bg-slate-800/50 border-slate-700 hover:border-indigo-500 hover:bg-indigo-500/10' : 'bg-slate-50 border-slate-200 hover:border-indigo-500 hover:bg-indigo-50'}`}
+                   >
+                     <div className="p-2 rounded-lg bg-indigo-500/20 text-indigo-500 mb-4">{getIcon(lib.icon)}</div>
+                     <h3 className="font-bold mb-2">{language === Language.VI ? lib.title.vi : lib.title.en}</h3>
+                     <p className="text-xs opacity-50 line-clamp-2">Click to prime NhutAIbot with this persona.</p>
+                   </button>
+                 ))}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Settings Modal */}
         {isAdvancedSettingsOpen && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center p-0 md:p-6 bg-black/60 backdrop-blur-md animate-in fade-in duration-300" onClick={() => setIsAdvancedSettingsOpen(false)}>
             <div className={`w-full max-w-3xl h-full md:h-[85vh] flex flex-col md:rounded-3xl border shadow-2xl overflow-hidden transition-all duration-300 ${theme === Theme.DARK ? 'bg-[#1e293b] border-slate-700' : 'bg-white border-slate-200'}`} onClick={e => e.stopPropagation()}>
@@ -425,13 +498,30 @@ const App: React.FC = () => {
                   )}
 
                   {activeSettingsTab === 'memory' && (
-                    <div className="space-y-6 text-center py-8">
-                       <div className="w-20 h-20 bg-indigo-500/10 rounded-full flex items-center justify-center mx-auto mb-4"><Database size={40} className="text-indigo-500" /></div>
-                       <h3 className="text-xl font-bold">{t.memory}</h3>
-                       <p className="text-sm opacity-60">AI hiện đang ghi nhớ ngữ cảnh của {messages.length} tin nhắn.</p>
-                       <button onClick={() => { setMessages([{ id: 'init', role: Role.MODEL, content: t.greeting, timestamp: new Date().toISOString() }]); handleApplySettings(); }} className="w-full p-4 rounded-2xl bg-red-500/10 text-red-500 font-bold border border-red-500/20 hover:bg-red-500/20 transition-all">
-                         <Trash2 size={18} className="inline mr-2" /> {t.clearMemory}
-                       </button>
+                    <div className="space-y-6">
+                       <div className="text-center py-4 border-b border-white/5 mb-6">
+                          <div className="w-16 h-16 bg-indigo-500/10 rounded-full flex items-center justify-center mx-auto mb-4"><Database size={32} className="text-indigo-500" /></div>
+                          <h3 className="text-lg font-bold">{t.longTermMemory}</h3>
+                          <p className="text-xs opacity-50">NhutAIbot automatically stores persistent facts about you to personalize your experience.</p>
+                       </div>
+
+                       <div className="space-y-4">
+                          <h4 className="text-[10px] font-bold uppercase tracking-widest text-indigo-500">{t.factsKnown}</h4>
+                          <div className="space-y-2">
+                             {userFacts.length > 0 ? userFacts.map((fact, idx) => (
+                               <div key={idx} className="flex items-center justify-between p-3 rounded-xl bg-slate-500/5 border border-slate-700/50">
+                                  <span className="text-xs">{fact}</span>
+                                  <button onClick={() => setUserFacts(prev => prev.filter((_, i) => i !== idx))} className="text-red-500/50 hover:text-red-500"><X size={14} /></button>
+                               </div>
+                             )) : <p className="text-xs opacity-30 italic">No facts stored yet. Try telling the bot your name or hobbies!</p>}
+                          </div>
+                       </div>
+                       
+                       <div className="pt-6 border-t border-white/5">
+                        <button onClick={() => { setMessages([{ id: 'init', role: Role.MODEL, content: t.greeting, timestamp: new Date().toISOString() }]); handleApplySettings(); }} className="w-full p-4 rounded-2xl bg-red-500/10 text-red-500 font-bold border border-red-500/20 hover:bg-red-500/20 transition-all">
+                          <RotateCcw size={18} className="inline mr-2" /> {t.clearMemory}
+                        </button>
+                       </div>
                     </div>
                   )}
 
@@ -439,7 +529,6 @@ const App: React.FC = () => {
                     <div className="space-y-4">
                        <h3 className="text-xs font-bold uppercase tracking-widest text-indigo-500">{t.systemPrompt}</h3>
                        <textarea value={customInstruction} onChange={(e) => setCustomInstruction(e.target.value)} placeholder="Nhập hướng dẫn huấn luyện AI tại đây..." className="w-full h-64 p-4 rounded-2xl bg-slate-500/5 border border-slate-700/50 focus:border-indigo-500 outline-none text-sm font-mono transition-all" />
-                       <div className="p-4 rounded-xl bg-yellow-500/10 border border-yellow-500/20 text-[10px] text-yellow-500 font-bold uppercase leading-relaxed">Lưu ý: Thay đổi chỉ dẫn hệ thống có thể khiến AI phản ứng khác hoàn toàn so với thiết lập mặc định.</div>
                     </div>
                   )}
                 </div>

@@ -26,7 +26,12 @@ export const TRANSLATIONS = {
     cancel: "Hủy",
     sources: "Nguồn đã duyệt",
     error: "Đã có lỗi xảy ra. Vui lòng thử lại.",
-    author: "Tác giả"
+    author: "Tác giả",
+    library: "Thư viện Prompt",
+    share: "Chia sẻ",
+    run: "Chạy thử",
+    longTermMemory: "Ghi nhớ dài hạn",
+    factsKnown: "Sự thật AI biết về bạn"
   },
   en: {
     greeting: "Welcome to NhutAIbot! How can I assist you today?",
@@ -51,15 +56,53 @@ export const TRANSLATIONS = {
     cancel: "Cancel",
     sources: "Verified Sources",
     error: "An error occurred. Please try again.",
-    author: "Author"
+    author: "Author",
+    library: "Prompt Library",
+    share: "Share",
+    run: "Run Sandbox",
+    longTermMemory: "Long-term Memory",
+    factsKnown: "AI Knowledge about you"
   }
 };
 
-export const getSystemInstruction = (lang: string) => {
-  if (lang === 'en') {
-    return `You are NhutAIbot, a professional AI assistant. Respond in English. Use Markdown. Be helpful and precise. Created by Nhutcoder.`;
+export const PROMPT_LIBRARY = [
+  {
+    id: 'expert-coder',
+    icon: 'Code',
+    title: { vi: 'Chuyên gia Lập trình', en: 'Expert Coder' },
+    prompt: 'You are an expert software architect and developer. Provide clean, optimized, and secure code. Explain complex logic simply. Use mermaid diagrams to visualize system architecture if applicable.'
+  },
+  {
+    id: 'creative-writer',
+    icon: 'PenTool',
+    title: { vi: 'Nhà văn Sáng tạo', en: 'Creative Writer' },
+    prompt: 'You are a multi-award winning creative writer. Use rich metaphors, engaging pacing, and vivid descriptions. Help me expand on characters or plot points.'
+  },
+  {
+    id: 'english-tutor',
+    icon: 'Languages',
+    title: { vi: 'Gia sư Tiếng Anh', en: 'English Tutor' },
+    prompt: 'You are a friendly English teacher. Correct my grammar, explain new vocabulary in context, and help me practice natural conversation. Provide feedback after each response.'
+  },
+  {
+    id: 'data-analyst',
+    icon: 'BarChart3',
+    title: { vi: 'Chuyên gia Dữ liệu', en: 'Data Analyst' },
+    prompt: 'You are a senior data scientist. Help me interpret data, suggest statistical methods, and visualize trends using mermaid charts when possible.'
   }
-  return `Bạn là NhutAIbot, một trợ lý AI chuyên nghiệp. Trả lời bằng tiếng Việt. Sử dụng Markdown. Hãy hữu ích và chính xác. Được tạo bởi Nhutcoder.`;
+];
+
+export const getSystemInstruction = (lang: string, facts: string[] = []) => {
+  const memoryContext = facts.length > 0 ? `\n\nLONG-TERM MEMORY ABOUT THE USER:\n- ${facts.join('\n- ')}` : '';
+  
+  if (lang === 'en') {
+    return `You are NhutAIbot, a professional AI assistant. Respond in English. Use Markdown. Be helpful and precise.
+    VISUAL THINKING: When explaining complex systems, processes, or architecture, ALWAYS try to use Mermaid diagrams (wrapped in \`\`\`mermaid code blocks).
+    CODING: When providing code, prefer high-quality, modern syntax.${memoryContext}`;
+  }
+  return `Bạn là NhutAIbot, một trợ lý AI chuyên nghiệp. Trả lời bằng tiếng Việt. Sử dụng Markdown. Hãy hữu ích và chính xác.
+  TRỰC QUAN HÓA: Khi giải thích các hệ thống, quy trình hoặc kiến trúc phức tạp, hãy LUÔN cố gắng sử dụng sơ đồ Mermaid (bao quanh bởi khối code \`\`\`mermaid).
+  LẬP TRÌNH: Cung cấp code chất lượng cao, cú pháp hiện đại.${memoryContext}`;
 };
 
 export const MODELS = {

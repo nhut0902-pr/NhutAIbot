@@ -4,6 +4,11 @@ export enum Role {
   MODEL = 'model'
 }
 
+export enum Language {
+  VI = 'vi',
+  EN = 'en'
+}
+
 export interface Source {
   uri: string;
   title: string;
@@ -27,14 +32,11 @@ export interface ChatSessionData {
   isWebSearchEnabled: boolean;
   temperature: number;
   customSystemInstruction?: string;
+  language: Language;
   lastUpdated: string;
 }
 
 export enum Theme {
   LIGHT = 'light',
   DARK = 'dark'
-}
-
-export interface ChatSessionConfig {
-  systemInstruction?: string;
 }

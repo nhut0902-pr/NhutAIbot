@@ -207,6 +207,12 @@ const App: React.FC = () => {
 
       for await (const chunk of stream) {
         const chunkObj = chunk as GenerateContentResponse;
+        
+        // Handle potential error chunk from API
+        if (chunkObj.candidates?.[0]?.finishReason === 'SAFETY' || chunkObj.candidates?.[0]?.finishReason === 'RECITATION') {
+           throw new Error(`Finishe reason: ${chunkObj.candidates[0].finishReason}`);
+        }
+
         const grounding = chunkObj.candidates?.[0]?.groundingMetadata;
         if (grounding?.groundingChunks) {
           grounding.groundingChunks.forEach((c: any) => {
@@ -220,8 +226,20 @@ const App: React.FC = () => {
           setMessages(prev => prev.map(m => m.id === botMessageId ? { ...m, content: fullContent, sources: detectedSources.length > 0 ? [...detectedSources] : m.sources } : m));
         }
       }
-    } catch (e) {
-      setMessages(prev => [...prev, { id: 'err', role: Role.MODEL, content: t.error, timestamp: new Date().toISOString(), isError: true }]);
+    } catch (e: any) {
+      console.error("Critical Chat Error:", e);
+      // Try to re-initialize session on error to clear potential stale states
+      geminiService.initializeChat(selectedModel, isThinkingEnabled ? 16384 : 0, messages, isWebSearchEnabled, temperature, customInstruction || getSystemInstruction(language, userFacts));
+      
+      const errorMessage = e?.message?.includes('429') 
+        ? "Bot đang quá tải (Rate limit). Vui lòng đợi 30 giây và thử lại." 
+        : t.error;
+
+      setMessages(prev => {
+        // Remove the empty bot message if it exists
+        const filtered = prev.filter(m => m.content !== '' || m.role === Role.USER);
+        return [...filtered, { id: 'err-' + Date.now(), role: Role.MODEL, content: errorMessage, timestamp: new Date().toISOString(), isError: true }];
+      });
     } finally {
       setIsLoading(false);
       setIsSearching(false);
@@ -321,7 +339,7 @@ const App: React.FC = () => {
                 <div className={`w-8 h-8 md:w-10 md:h-10 rounded-full flex items-center justify-center flex-shrink-0 shadow-lg ${m.role === Role.USER ? 'bg-indigo-600' : 'bg-slate-700 border border-slate-600'}`}>
                   {m.role === Role.USER ? <User size={18} className="text-white" /> : <Bot size={18} className="text-indigo-400" />}
                 </div>
-                <div className={`group px-4 md:px-6 py-3.5 rounded-2xl text-sm md:text-base shadow-sm relative ${m.role === Role.USER ? 'bg-indigo-600 text-white rounded-tr-none' : (theme === Theme.DARK ? 'bg-slate-800 border border-slate-700 text-slate-200' : 'bg-white border border-slate-200 text-slate-800') + ' rounded-tl-none'}`}>
+                <div className={`group px-4 md:px-6 py-3.5 rounded-2xl text-sm md:text-base shadow-sm relative ${m.role === Role.USER ? 'bg-indigo-600 text-white rounded-tr-none' : (theme === Theme.DARK ? 'bg-slate-800 border border-slate-700 text-slate-200' : 'bg-white border border-slate-200 text-slate-800') + ' rounded-tl-none'} ${m.isError ? 'border-red-500/50 bg-red-500/5' : ''}`}>
                   
                   <MarkdownRenderer content={m.content} />
                   

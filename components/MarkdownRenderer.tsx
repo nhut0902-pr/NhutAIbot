@@ -2,9 +2,16 @@
 import React, { useState, useEffect, useRef } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-// Added missing X import
-import { Copy, Check, Play, ExternalLink, X } from 'lucide-react';
+import { Copy, Check, Play, ExternalLink, X, AlertCircle } from 'lucide-react';
 import mermaid from 'mermaid';
+
+// Initialize mermaid once outside to avoid re-initialization loops
+mermaid.initialize({ 
+  startOnLoad: false, 
+  theme: 'dark', 
+  securityLevel: 'loose',
+  fontFamily: 'Inter, sans-serif'
+});
 
 interface MarkdownRendererProps {
   content: string;
@@ -12,28 +19,48 @@ interface MarkdownRendererProps {
 
 const MermaidChart: React.FC<{ chart: string }> = ({ chart }) => {
   const [svg, setSvg] = useState<string>('');
+  const [error, setError] = useState<boolean>(false);
   const elementRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    mermaid.initialize({ startOnLoad: true, theme: 'dark', securityLevel: 'loose' });
     const renderChart = async () => {
-      if (chart) {
-        try {
-          const id = `mermaid-${Math.random().toString(36).substr(2, 9)}`;
-          const { svg } = await mermaid.render(id, chart);
-          setSvg(svg);
-        } catch (e) {
-          console.error('Mermaid render error:', e);
+      if (!chart.trim()) return;
+      
+      try {
+        // Sanitize chart string: remove any potential "mermaid" text at start if AI misbehaved
+        let cleanChart = chart.trim();
+        if (cleanChart.startsWith('mermaid')) {
+          cleanChart = cleanChart.substring(7).trim();
         }
+
+        const id = `mermaid-${Math.random().toString(36).substr(2, 9)}`;
+        const { svg: renderedSvg } = await mermaid.render(id, cleanChart);
+        setSvg(renderedSvg);
+        setError(false);
+      } catch (e) {
+        console.error('Mermaid render error:', e);
+        setError(true);
       }
     };
     renderChart();
   }, [chart]);
 
+  if (error) {
+    return (
+      <div className="my-6 p-4 rounded-xl bg-red-500/5 border border-red-500/20 flex flex-col items-center gap-2 text-red-400">
+        <AlertCircle size={24} />
+        <p className="text-xs font-bold uppercase tracking-widest">Biểu đồ gặp lỗi cú pháp</p>
+        <pre className="text-[10px] opacity-60 max-w-full overflow-x-auto p-2 bg-black/20 rounded">
+          {chart.substring(0, 100)}...
+        </pre>
+      </div>
+    );
+  }
+
   return (
     <div 
       ref={elementRef} 
-      className="my-6 p-4 rounded-xl bg-slate-900/50 flex justify-center overflow-x-auto border border-white/10"
+      className="my-6 p-4 rounded-xl bg-slate-900/50 flex justify-center overflow-x-auto border border-white/10 shadow-inner"
       dangerouslySetInnerHTML={{ __html: svg }} 
     />
   );

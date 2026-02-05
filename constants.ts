@@ -8,109 +8,82 @@ export const TRANSLATIONS = {
     newChat: "Cuộc hội thoại mới",
     history: "Lịch sử",
     settings: "Cài đặt AI",
-    export: "Xuất chat",
+    personalization: "Cá nhân hóa",
+    nickname: "Biệt danh của bạn",
+    job: "Nghề nghiệp của bạn",
+    extraInfo: "Thêm thông tin về bạn",
+    traits: "Đặc điểm",
+    addTraits: "Thêm đặc điểm",
+    customInstructions: "Hướng dẫn tùy chỉnh",
+    memory: "Bộ nhớ",
+    advanced: "Nâng cao",
+    webSearch: "Tìm kiếm web",
+    webSearchDesc: "Tìm kiếm web để tìm câu trả lời",
+    codeExecution: "Mã",
+    codeExecutionDesc: "Thực thi mã bằng Trình thông dịch mã",
+    canvas: "Canvas",
+    canvasDesc: "Cùng với NhutAIbot làm việc trên văn bản và mã",
+    language: "Ngôn ngữ",
     inputPlaceholder: "Nhắn NhutAIbot...",
     thinking: "Đang suy nghĩ...",
     searching: "Đang tìm kiếm nguồn tin...",
-    aiSettings: "Cấu hình AI",
-    fineTune: "Tinh chỉnh",
-    memory: "Bộ nhớ",
-    training: "Huấn luyện",
-    model: "Mô hình",
-    creativity: "Độ sáng tạo",
-    thinkingMode: "Suy nghĩ sâu",
-    webSearch: "Tìm kiếm Web",
-    clearMemory: "Xóa bộ nhớ",
-    systemPrompt: "Chỉ dẫn hệ thống",
-    apply: "Áp dụng & Lưu",
-    cancel: "Hủy",
-    sources: "Nguồn đã duyệt",
     error: "Đã có lỗi xảy ra. Vui lòng thử lại.",
-    author: "Tác giả",
-    library: "Thư viện Prompt",
-    share: "Chia sẻ",
-    run: "Chạy thử",
-    longTermMemory: "Ghi nhớ dài hạn",
-    factsKnown: "Sự thật AI biết về bạn"
+    save: "Lưu",
+    back: "Quay lại",
+    privacy: "Quyền riêng tư",
+    privacyTitle: "Chính sách Quyền riêng tư NhutAIbot",
+    privacyHackathon: "NhutAIbot được tạo ra nhằm mục đích tham gia cuộc thi Nhutcoder Hackathon 2025.",
+    privacyContent: "Chúng tôi tôn trọng quyền riêng tư của bạn. Mọi dữ liệu hội thoại của bạn được lưu trữ cục bộ trên trình duyệt của bạn (Local Storage) và chỉ được gửi đến API Google Gemini để xử lý phản hồi. Chúng tôi không lưu trữ dữ liệu cá nhân của bạn trên bất kỳ máy chủ riêng nào."
   },
   en: {
     greeting: "Welcome to NhutAIbot! How can I assist you today?",
     newChat: "New Conversation",
     history: "History",
     settings: "AI Settings",
-    export: "Export Chat",
+    personalization: "Personalization",
+    nickname: "Your nickname",
+    job: "Your profession",
+    extraInfo: "Add info about you",
+    traits: "Traits",
+    addTraits: "Add traits",
+    customInstructions: "Custom instructions",
+    memory: "Memory",
+    advanced: "Advanced",
+    webSearch: "Web search",
+    webSearchDesc: "Search the web for answers",
+    codeExecution: "Code",
+    codeExecutionDesc: "Execute code using Code Interpreter",
+    canvas: "Canvas",
+    canvasDesc: "Collaborate with NhutAIbot on text and code",
+    language: "Language",
     inputPlaceholder: "Message NhutAIbot...",
     thinking: "Thinking...",
     searching: "Searching web sources...",
-    aiSettings: "AI System Settings",
-    fineTune: "Fine-tune",
-    memory: "Memory",
-    training: "Training",
-    model: "Model",
-    creativity: "Creativity",
-    thinkingMode: "Deep Thinking",
-    webSearch: "Web Search",
-    clearMemory: "Clear Memory",
-    systemPrompt: "System Instruction",
-    apply: "Apply & Save",
-    cancel: "Cancel",
-    sources: "Verified Sources",
     error: "An error occurred. Please try again.",
-    author: "Author",
-    library: "Prompt Library",
-    share: "Share",
-    run: "Run Sandbox",
-    longTermMemory: "Long-term Memory",
-    factsKnown: "AI Knowledge about you"
+    save: "Save",
+    back: "Back",
+    privacy: "Privacy",
+    privacyTitle: "NhutAIbot Privacy Policy",
+    privacyHackathon: "NhutAIbot was created for the purpose of participating in Nhutcoder Hackathon 2025.",
+    privacyContent: "We respect your privacy. All your conversation data is stored locally on your browser (Local Storage) and only sent to the Google Gemini API to process responses. We do not store your personal data on any private servers."
   }
 };
 
-export const PROMPT_LIBRARY = [
-  {
-    id: 'expert-coder',
-    icon: 'Code',
-    title: { vi: 'Chuyên gia Lập trình', en: 'Expert Coder' },
-    prompt: 'You are an expert software architect and developer. Provide clean, optimized, and secure code. Explain complex logic simply. Use mermaid diagrams to visualize system architecture if applicable.'
-  },
-  {
-    id: 'creative-writer',
-    icon: 'PenTool',
-    title: { vi: 'Nhà văn Sáng tạo', en: 'Creative Writer' },
-    prompt: 'You are a multi-award winning creative writer. Use rich metaphors, engaging pacing, and vivid descriptions. Help me expand on characters or plot points.'
-  },
-  {
-    id: 'english-tutor',
-    icon: 'Languages',
-    title: { vi: 'Gia sư Tiếng Anh', en: 'English Tutor' },
-    prompt: 'You are a friendly English teacher. Correct my grammar, explain new vocabulary in context, and help me practice natural conversation. Provide feedback after each response.'
-  },
-  {
-    id: 'data-analyst',
-    icon: 'BarChart3',
-    title: { vi: 'Chuyên gia Dữ liệu', en: 'Data Analyst' },
-    prompt: 'You are a senior data scientist. Help me interpret data, suggest statistical methods, and visualize trends using mermaid charts when possible.'
-  }
-];
-
-export const getSystemInstruction = (lang: string, facts: string[] = []) => {
+export const getSystemInstruction = (lang: string, facts: string[] = [], custom?: string) => {
   const memoryContext = facts.length > 0 ? `\n\nLONG-TERM MEMORY ABOUT THE USER:\n- ${facts.join('\n- ')}` : '';
+  const customContext = custom ? `\n\nUSER CUSTOM INSTRUCTIONS:\n${custom}` : '';
   
   const mermaidStrict = `
   MERMAID RULES:
-  - ALWAYS start with a valid type (e.g., 'graph TD', 'sequenceDiagram', 'pie', 'gantt').
-  - DO NOT use unescaped special characters (like parentheses or quotes) inside node labels unless wrapped in "".
-  - Keep it simple and robust. Use 'graph TD' for general flows.
+  - ALWAYS start with a valid type (e.g., 'graph TD', 'sequenceDiagram').
+  - DO NOT use unescaped special characters inside node labels.
   - DO NOT include the word "mermaid" inside the code block itself.
   `;
 
   if (lang === 'en') {
-    return `You are NhutAIbot, a professional AI assistant. Respond in English. Use Markdown. Be helpful and precise.
-    VISUAL THINKING: When explaining complex systems, ALWAYS use Mermaid diagrams (wrapped in \`\`\`mermaid code blocks). ${mermaidStrict}
-    CODING: When providing code, prefer high-quality, modern syntax.${memoryContext}`;
+    return `You are NhutAIbot, a professional AI assistant. Respond in English. Use Markdown. Be helpful and precise.${customContext}${memoryContext}\n${mermaidStrict}`;
   }
-  return `Bạn là NhutAIbot, một trợ lý AI chuyên nghiệp. Trả lời bằng tiếng Việt. Sử dụng Markdown. Hãy hữu ích và chính xác.
-  TRỰC QUAN HÓA: Khi giải thích các hệ thống phức tạp, hãy LUÔN sử dụng sơ đồ Mermaid (bao quanh bởi khối code \`\`\`mermaid). ${mermaidStrict}
-  LẬP TRÌNH: Cung cấp code chất lượng cao, cú pháp hiện đại.${memoryContext}`;
+  return `Bạn là NhutAIbot, một trợ lý AI chuyên nghiệp. Trả lời bằng tiếng Việt. Sử dụng Markdown. Hãy hữu ích và chính xác.${customContext}${memoryContext}\n${mermaidStrict}`;
 };
 
 export const MODELS = {

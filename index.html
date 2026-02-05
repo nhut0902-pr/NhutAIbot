@@ -4,7 +4,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>NhutAIbot</title>
+    <title>NhutAIbot | Gemini Pro</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
       tailwind.config = {
@@ -12,11 +12,20 @@
         theme: {
           extend: {
             fontFamily: {
-              sans: ['Inter', 'sans-serif'],
+              sans: ['Inter', 'system-ui', 'sans-serif'],
             },
-            animation: {
-              'pulse-slow': 'pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite',
-              'bounce-small': 'bounce 1s infinite',
+            colors: {
+              gemini: {
+                bgLight: '#f0f4f9',
+                bgDark: '#131314',
+                cardLight: '#ffffff',
+                cardDark: '#1e1f20',
+                inputLight: '#e9eef6',
+                inputDark: '#1e1f20',
+                textLight: '#1f1f1f',
+                textDark: '#e3e3e3',
+                accent: '#0b57d0'
+              }
             }
           },
         },
@@ -24,40 +33,53 @@
     </script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <style>
+      :root {
+        --bg-color: #ffffff;
+        --text-color: #1f1f1f;
+      }
+      .dark {
+        --bg-color: #000000;
+        --text-color: #e3e3e3;
+      }
       body {
         font-family: 'Inter', sans-serif;
-      }
-      /* Custom scrollbar for glassmorphism feel */
-      ::-webkit-scrollbar {
-        width: 8px;
-        height: 8px;
-      }
-      ::-webkit-scrollbar-track {
-        background: transparent; 
-      }
-      ::-webkit-scrollbar-thumb {
-        background: rgba(156, 163, 175, 0.3); 
-        border-radius: 4px;
-      }
-      ::-webkit-scrollbar-thumb:hover {
-        background: rgba(156, 163, 175, 0.5); 
+        background-color: var(--bg-color);
+        color: var(--text-color);
+        transition: background-color 0.3s ease, color 0.3s ease;
       }
       
-      .glass-panel {
-        background: rgba(255, 255, 255, 0.05);
-        backdrop-filter: blur(16px);
-        -webkit-backdrop-filter: blur(16px);
-        border: 1px solid rgba(255, 255, 255, 0.1);
+      .no-scrollbar::-webkit-scrollbar { display: none; }
+      .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+      
+      .gemini-pill {
+        border: 1px solid transparent;
+        transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
       }
-      .glass-input {
-        background: rgba(0, 0, 0, 0.2);
-        backdrop-filter: blur(4px);
-        border: 1px solid rgba(255, 255, 255, 0.1);
+      .dark .gemini-pill {
+        background-color: #1e1f20;
       }
-      .light-mode-glass {
-        background: rgba(255, 255, 255, 0.6);
-        backdrop-filter: blur(16px);
-        border: 1px solid rgba(255, 255, 255, 0.4);
+      .gemini-pill:hover {
+        background-color: #f1f3f4;
+        border-color: #dadce0;
+      }
+      .dark .gemini-pill:hover {
+        background-color: #2d2e30;
+        border-color: #3c4043;
+      }
+
+      .input-bar-container {
+        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+      }
+      .dark .input-bar-container {
+        box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+      }
+
+      @keyframes slideUp {
+        from { transform: translateY(20px); opacity: 0; }
+        to { transform: translateY(0); opacity: 1; }
+      }
+      .animate-slide-up {
+        animation: slideUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
       }
     </style>
   <script type="importmap">
@@ -75,7 +97,7 @@
 }
 </script>
 </head>
-  <body>
+  <body class="dark transition-colors duration-500">
     <div id="root"></div>
     <script type="module" src="/index.tsx"></script>
   </body>

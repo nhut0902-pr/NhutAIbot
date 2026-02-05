@@ -1,5 +1,7 @@
 {
   "name": "NhutAIbot",
   "description": "A modern, friendly AI assistant with a glassmorphic UI, Markdown support, and code highlighting. Powered by Google Gemini.",
-  "requestFramePermissions": []
+  "requestFramePermissions": [
+    "microphone"
+  ]
 }

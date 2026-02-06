@@ -1,6 +1,5 @@
 
 import { GoogleGenAI, Chat, GenerateContentResponse } from "@google/genai";
-// Fixed: import getSystemInstruction instead of non-existent SYSTEM_INSTRUCTION
 import { MODELS, getSystemInstruction } from '../constants';
 import { Message, Role } from '../types';
 
@@ -25,7 +24,6 @@ export const initializeChat = (
   const ai = getAIInstance();
   
   const config: any = {
-    // Fixed: Use getSystemInstruction('vi') as a fallback
     systemInstruction: customSystemInstruction || getSystemInstruction('vi'),
     temperature: temperature,
   };

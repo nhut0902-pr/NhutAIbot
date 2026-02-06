@@ -4,7 +4,7 @@ import {
   Send, Moon, Sun, Bot, User, Settings, Sparkles, Brain, X, Plus, 
   MessageSquare, Menu, Globe, UserCircle, Layers, Database, Check, 
   ArrowLeft, ChevronDown, ChevronUp, Languages, Layout, Shield, AlertCircle,
-  BookOpen, Code, Lightbulb, Zap, Trash2, Image as ImageIcon
+  BookOpen, Code, Lightbulb, Zap, Trash2, Image as ImageIcon, Terminal, Play, Cpu
 } from 'lucide-react';
 import { GenerateContentResponse } from "@google/genai";
 
@@ -24,36 +24,34 @@ const App: React.FC = () => {
   const [language, setLanguage] = useState<Language>(() => (localStorage.getItem('nhutaibot_lang') as Language) || Language.VI);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isAdvancedSettingsOpen, setIsAdvancedSettingsOpen] = useState(false);
-  const [isPrivacyOpen, setIsPrivacyOpen] = useState(false);
-  const [showPrivacyNotice, setShowPrivacyNotice] = useState(() => localStorage.getItem('nhutaibot_privacy_read') !== 'true');
   
-  // States for Personalization
+  // Canvas State
+  const [canvasState, setCanvasState] = useState<{ open: boolean, code: string, lang: string }>({ open: false, code: '', lang: '' });
+  const [pythonOutput, setPythonOutput] = useState<string>('');
+  const [isPythonLoading, setIsPythonLoading] = useState(false);
+
+  // User personalization states
   const [userName, setUserName] = useState<string>(localStorage.getItem('nhutaibot_username') || '');
-  const [currentMode, setCurrentMode] = useState<string>('standard');
   const [userJob, setUserJob] = useState<string>(localStorage.getItem('nhutaibot_job') || '');
-  const [userBio, setUserBio] = useState<string>(localStorage.getItem('nhutaibot_bio') || '');
   const [customInstructions, setCustomInstructions] = useState<string>(localStorage.getItem('nhutaibot_custom') || '');
-  const [traits, setTraits] = useState<string>(localStorage.getItem('nhutaibot_traits') || '');
   
   // Feature States
+  const [currentMode, setCurrentMode] = useState<string>(localStorage.getItem('nhutaibot_mode') || 'standard');
+  const [selectedModel, setSelectedModel] = useState<string>(localStorage.getItem('nhutaibot_model') || MODELS.FLASH.id);
+  const [isCodeExecutionEnabled, setIsCodeExecutionEnabled] = useState(localStorage.getItem('nhutaibot_code') === 'true');
   const [isWebSearchEnabled, setIsWebSearchEnabled] = useState(localStorage.getItem('nhutaibot_websearch') === 'true');
-  const [isThinkingEnabled, setIsThinkingEnabled] = useState(false);
-  const [selectedModel, setSelectedModel] = useState(MODELS.FLASH.id);
+  const [isThinkingEnabled, setIsThinkingEnabled] = useState(localStorage.getItem('nhutaibot_thinking') === 'true');
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const pyodideRef = useRef<any>(null);
   const t = TRANSLATIONS[language];
 
   useLayoutEffect(() => {
     document.documentElement.classList.toggle('dark', theme === Theme.DARK);
     localStorage.setItem('nhutaibot_theme', theme);
   }, [theme]);
-
-  useEffect(() => {
-    localStorage.setItem('nhutaibot_lang', language);
-  }, [language]);
 
   useEffect(() => {
     const saved = localStorage.getItem('nhutaibot_sessions');
@@ -66,8 +64,6 @@ const App: React.FC = () => {
       createNewSession();
     }
   }, []);
-
-  const toggleLanguage = () => setLanguage(prev => prev === Language.VI ? Language.EN : Language.VI);
 
   const createNewSession = () => {
     const newId = Date.now().toString();
@@ -94,6 +90,8 @@ const App: React.FC = () => {
       setCurrentSessionId(id);
       setMessages(session.messages);
       setSelectedModel(session.modelId);
+      setIsThinkingEnabled(session.isThinkingEnabled);
+      setIsWebSearchEnabled(session.isWebSearchEnabled);
       reinitChat(session);
     }
     setIsSidebarOpen(false);
@@ -104,77 +102,79 @@ const App: React.FC = () => {
       session.modelId, 
       session.isThinkingEnabled ? 16384 : 0, 
       session.messages, 
-      session.isWebSearchEnabled, 
+      session.isWebSearchEnabled,
+      isCodeExecutionEnabled,
       0.7, 
-      getSystemInstruction(language, currentMode, [userName, userJob, userBio].filter(Boolean), customInstructions + "\n" + traits)
+      getSystemInstruction(language, currentMode, [userName, userJob].filter(Boolean), customInstructions)
     );
   };
 
-  const deleteSession = (e: React.MouseEvent, id: string) => {
-    e.stopPropagation();
-    const updated = sessions.filter(s => s.id !== id);
-    setSessions(updated);
-    localStorage.setItem('nhutaibot_sessions', JSON.stringify(updated));
-    if (currentSessionId === id) {
-      if (updated.length > 0) loadSession(updated[0].id, updated);
-      else createNewSession();
-    }
-  };
-
-  const handleModeChange = (modeId: string) => {
-    setCurrentMode(modeId);
-    if (currentSessionId) {
-      const session = sessions.find(s => s.id === currentSessionId);
-      if (session) reinitChat(session);
-    }
-  };
-
-  const savePersonalization = () => {
+  const handleSaveSettings = () => {
     localStorage.setItem('nhutaibot_username', userName);
     localStorage.setItem('nhutaibot_job', userJob);
-    localStorage.setItem('nhutaibot_bio', userBio);
     localStorage.setItem('nhutaibot_custom', customInstructions);
-    localStorage.setItem('nhutaibot_traits', traits);
+    localStorage.setItem('nhutaibot_mode', currentMode);
+    localStorage.setItem('nhutaibot_model', selectedModel);
+    localStorage.setItem('nhutaibot_thinking', isThinkingEnabled.toString());
     localStorage.setItem('nhutaibot_websearch', isWebSearchEnabled.toString());
+    localStorage.setItem('nhutaibot_code', isCodeExecutionEnabled.toString());
     
     if (currentSessionId) {
-      const session = sessions.find(s => s.id === currentSessionId);
-      if (session) reinitChat(session);
+      const updated = sessions.map(s => s.id === currentSessionId ? {
+        ...s,
+        modelId: selectedModel,
+        isThinkingEnabled,
+        isWebSearchEnabled
+      } : s);
+      setSessions(updated);
+      reinitChat(updated.find(s => s.id === currentSessionId)!);
     }
     setIsAdvancedSettingsOpen(false);
   };
 
-  const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onload = (ev) => setSelectedImage(ev.target?.result as string);
-      reader.readAsDataURL(file);
+  const handleRunCode = async (code: string, lang: string) => {
+    setCanvasState({ open: true, code, lang });
+    if (lang === 'python') {
+      setPythonOutput('Đang khởi tạo Python VM...');
+      await runPython(code);
     }
-    // Reset input to allow selecting same file again
-    e.target.value = '';
   };
 
-  const handleSend = async (overrideInput?: string) => {
-    const textToSend = overrideInput || input;
-    if ((!textToSend.trim() && !selectedImage) || isLoading) return;
+  const runPython = async (code: string) => {
+    try {
+      setIsPythonLoading(true);
+      if (!pyodideRef.current) {
+        // @ts-ignore
+        pyodideRef.current = await window.loadPyodide();
+      }
+      const py = pyodideRef.current;
+      py.runPython(`
+import sys
+import io
+sys.stdout = io.StringIO()
+      `);
+      await py.runPythonAsync(code);
+      const stdout = py.runPython("sys.stdout.getvalue()");
+      setPythonOutput(stdout || "Chạy thành công (Không có output)");
+    } catch (err: any) {
+      setPythonOutput(`LỖI PYTHON:\n${err.message}`);
+    } finally {
+      setIsPythonLoading(false);
+    }
+  };
 
+  const handleSend = async () => {
+    if ((!input.trim() && !selectedImage) || isLoading) return;
+    const textToSend = input;
     const userMsg: Message = { id: Date.now().toString(), role: Role.USER, content: textToSend, timestamp: new Date().toISOString() };
     setMessages(prev => [...prev, userMsg]);
-    
-    const imageToSend = selectedImage ? { 
-      inlineData: { 
-        data: selectedImage.split(',')[1], 
-        mimeType: 'image/png' 
-      } 
-    } : undefined;
-
     setInput('');
-    setSelectedImage(null);
     setIsLoading(true);
 
     try {
-      const stream = await geminiService.sendMessageStream(textToSend, imageToSend);
+      const imagePart = selectedImage ? { inlineData: { data: selectedImage.split(',')[1], mimeType: 'image/png' } } : undefined;
+      const stream = await geminiService.sendMessageStream(textToSend, imagePart);
+      setSelectedImage(null);
       const botMsgId = (Date.now() + 1).toString();
       let fullContent = '';
       setMessages(prev => [...prev, { id: botMsgId, role: Role.MODEL, content: '', timestamp: new Date().toISOString() }]);
@@ -205,211 +205,215 @@ const App: React.FC = () => {
   const modes = [
     { id: 'standard', icon: Zap, label: t.modes.standard, color: 'text-blue-500' },
     { id: 'learning', icon: BookOpen, label: t.modes.learning, color: 'text-emerald-500' },
-    { id: 'coder', icon: Code, label: t.modes.coder, color: 'text-purple-500' },
+    { id: 'coder', icon: Terminal, label: t.modes.coder, color: 'text-purple-500' },
     { id: 'assistant', icon: Lightbulb, label: t.modes.assistant, color: 'text-amber-500' },
   ];
 
   return (
-    <div className={`h-screen w-full flex flex-col transition-colors overflow-hidden ${theme === Theme.DARK ? 'bg-black text-gray-200' : 'bg-white text-gray-900'}`}>
+    <div className={`h-screen w-full flex transition-colors overflow-hidden ${theme === Theme.DARK ? 'bg-black text-gray-200' : 'bg-white text-gray-900'}`}>
       
-      {/* Header */}
-      <header className="h-16 flex items-center justify-between px-4 z-30 border-b dark:border-gray-800 bg-opacity-70 backdrop-blur-md">
-        <div className="flex items-center gap-3">
-          <button onClick={() => setIsSidebarOpen(true)} className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-xl transition-all"><Menu size={24} /></button>
-          <span className="text-xl font-bold tracking-tight bg-gradient-to-r from-blue-500 to-indigo-600 bg-clip-text text-transparent">NhutAIbot</span>
+      {/* Sidebar Content */}
+      <aside className={`fixed lg:static inset-y-0 left-0 w-72 z-50 transform transition-transform duration-300 lg:translate-x-0 ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'} ${theme === Theme.DARK ? 'bg-gray-950 border-r border-gray-800' : 'bg-gray-50 border-r border-gray-200'} p-4 flex flex-col shadow-2xl lg:shadow-none`}>
+        <div className="flex items-center justify-between mb-6">
+          <h2 className="font-bold text-lg flex items-center gap-2 text-blue-500"><MessageSquare size={18} /> {t.history}</h2>
+          <button onClick={() => setIsSidebarOpen(false)} className="lg:hidden p-2"><X size={20} /></button>
         </div>
-
-        {/* Desktop Mode Selector */}
-        <div className="hidden md:flex items-center bg-gray-100 dark:bg-gray-900 p-1 rounded-2xl">
-          {modes.map(m => (
-            <button key={m.id} onClick={() => handleModeChange(m.id)} className={`px-4 py-1.5 rounded-xl text-xs font-bold transition-all ${currentMode === m.id ? 'bg-white dark:bg-gray-800 shadow-sm ' + m.color : 'text-gray-500'}`}>
-              <m.icon size={14} className="inline mr-1" /> {m.label}
-            </button>
+        <button onClick={createNewSession} className="w-full flex items-center justify-center gap-2 p-3 bg-blue-600 text-white rounded-xl font-bold mb-4 shadow-lg shadow-blue-500/20 hover:scale-[1.02] active:scale-95 transition-all"><Plus size={18} /> {t.newChat}</button>
+        <div className="flex-1 overflow-y-auto space-y-2 no-scrollbar">
+          {sessions.map(s => (
+            <div key={s.id} onClick={() => loadSession(s.id)} className={`p-3 rounded-xl cursor-pointer transition-all flex items-center justify-between group ${currentSessionId === s.id ? 'bg-blue-600/10 text-blue-500' : 'hover:bg-gray-200 dark:hover:bg-gray-800 text-gray-500'}`}>
+              <span className="truncate text-sm font-medium">{s.title}</span>
+              <Trash2 size={14} className="opacity-0 group-hover:opacity-100 text-red-500 hover:scale-125 transition-all" onClick={(e) => { e.stopPropagation(); /* delete logic */ }} />
+            </div>
           ))}
         </div>
+      </aside>
 
-        <div className="flex items-center gap-2">
-          <button onClick={toggleLanguage} className="p-2 bg-gray-100 dark:bg-gray-800 rounded-full font-bold text-[10px] uppercase">{language}</button>
-          <button onClick={() => setTheme(theme === Theme.DARK ? Theme.LIGHT : Theme.DARK)} className="p-2">{theme === Theme.DARK ? <Sun size={20} /> : <Moon size={20} />}</button>
-          <button onClick={() => setIsAdvancedSettingsOpen(true)} className="p-2"><Settings size={20} /></button>
-          <div className="w-9 h-9 bg-blue-600 rounded-full flex items-center justify-center text-white font-bold">{userName?.charAt(0).toUpperCase() || "U"}</div>
-        </div>
-      </header>
-
-      {/* Main Container */}
-      <main className="flex-1 overflow-y-auto no-scrollbar relative flex flex-col">
-        {(!userName && !isAdvancedSettingsOpen) ? (
-          <div className="max-w-3xl mx-auto w-full px-6 py-24 flex-1 flex flex-col items-center justify-center text-center animate-slide-up">
-            <div className="w-20 h-20 bg-blue-600 rounded-3xl flex items-center justify-center mb-6 shadow-2xl"><Bot size={40} className="text-white" /></div>
-            <h2 className="text-3xl font-bold mb-6">Chào mừng bạn!</h2>
-            <div className="flex gap-2 w-full max-w-sm">
-              <input type="text" value={userName} onChange={(e) => setUserName(e.target.value)} placeholder="Tên của bạn..." className="flex-1 px-4 py-3 rounded-xl bg-gray-100 dark:bg-gray-800 outline-none border border-transparent dark:border-gray-700 focus:border-blue-500" />
-              <button onClick={() => { localStorage.setItem('nhutaibot_username', userName); savePersonalization(); }} className="p-4 bg-blue-600 text-white rounded-xl"><Check size={20} /></button>
-            </div>
+      {/* Main Chat Area */}
+      <div className={`flex-1 flex flex-col min-w-0 transition-all duration-500 ${canvasState.open ? 'lg:mr-[40%]' : ''}`}>
+        <header className="h-16 flex items-center justify-between px-4 border-b dark:border-gray-800 bg-opacity-70 backdrop-blur-md z-30">
+          <div className="flex items-center gap-3">
+            <button onClick={() => setIsSidebarOpen(true)} className="p-2 lg:hidden"><Menu size={24} /></button>
+            <span className="text-xl font-black bg-gradient-to-r from-blue-500 to-indigo-600 bg-clip-text text-transparent">NhutAIbot</span>
           </div>
-        ) : (
-          <div className="max-w-3xl mx-auto w-full px-4 md:px-6 py-8 space-y-8 flex-1">
-             {/* Mobile Mode Selector */}
-            <div className="md:hidden grid grid-cols-2 gap-2 mt-4">
-              {modes.map(m => (
-                <button key={m.id} onClick={() => handleModeChange(m.id)} className={`flex items-center gap-2 p-3 rounded-2xl border transition-all ${currentMode === m.id ? 'bg-blue-600/10 border-blue-500/50 ' + m.color : 'bg-gray-100 dark:bg-gray-900 border-transparent text-gray-500'}`}>
-                  <m.icon size={16} /> <span className="text-[10px] font-bold">{m.label}</span>
-                </button>
-              ))}
-            </div>
-
-            {messages.length === 0 && (
-              <div className="py-12 text-center">
-                 <h1 className="text-4xl font-bold mb-4">Xin chào {userName}!</h1>
-                 <p className="text-gray-500">{t.greeting}</p>
-              </div>
-            )}
-
-            {messages.map(m => (
-              <div key={m.id} className={`flex ${m.role === Role.USER ? 'justify-end' : 'justify-start'}`}>
-                <div className={`flex gap-4 max-w-[90%] ${m.role === Role.USER ? 'flex-row-reverse' : ''}`}>
-                  <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 mt-1 ${m.role === Role.USER ? 'bg-blue-600' : 'bg-transparent text-blue-500'}`}>{m.role === Role.USER ? <span className="text-xs text-white">U</span> : <Bot size={24} />}</div>
-                  <div className={`p-4 rounded-2xl ${m.role === Role.USER ? 'bg-blue-600/10 dark:bg-blue-600/20' : 'bg-transparent'}`}><MarkdownRenderer content={m.content} /></div>
-                </div>
-              </div>
+          
+          <div className="hidden lg:flex items-center bg-gray-100 dark:bg-gray-900 p-1 rounded-2xl border dark:border-gray-800">
+            {Object.entries(MODELS).map(([key, model]) => (
+              <button key={model.id} onClick={() => setSelectedModel(model.id)} className={`px-4 py-1.5 rounded-xl text-[10px] font-black uppercase transition-all ${selectedModel === model.id ? 'bg-white dark:bg-gray-800 shadow-sm text-blue-500' : 'text-gray-500 hover:text-gray-300'}`}>
+                {model.name.replace('Gemini 3 ', '')}
+              </button>
             ))}
-            {isLoading && <div className="flex justify-start gap-4"><Bot size={24} className="text-blue-500 animate-pulse" /><TypingIndicator /></div>}
-            <div ref={messagesEndRef} className="h-24" />
           </div>
-        )}
 
-        {/* Privacy Notice (Toast styled) */}
-        {showPrivacyNotice && userName && !isPrivacyOpen && (
-          <div className="fixed top-20 right-4 left-4 md:left-auto md:w-80 bg-white dark:bg-gray-900 border border-blue-500/20 p-4 rounded-2xl shadow-2xl z-50 animate-slide-up">
-            <div className="flex items-start gap-3">
-              <AlertCircle className="text-blue-500 shrink-0 mt-1" size={18} />
-              <div className="flex-1">
-                <p className="text-[11px] text-gray-500 leading-tight">
-                  {t.privacyHackathon} Vui lòng đọc qua <button onClick={() => setIsPrivacyOpen(true)} className="text-blue-600 underline">quyền riêng tư</button>.
-                </p>
-              </div>
-              <button onClick={() => setShowPrivacyNotice(false)} className="p-1"><X size={14} /></button>
-            </div>
+          <div className="flex items-center gap-1 md:gap-3">
+            <button onClick={() => setTheme(theme === Theme.DARK ? Theme.LIGHT : Theme.DARK)} className="p-2.5 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-500">{theme === Theme.DARK ? <Sun size={20} /> : <Moon size={20} />}</button>
+            <button onClick={() => setIsAdvancedSettingsOpen(true)} className="p-2.5 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-500"><Settings size={20} /></button>
+            <div className="w-9 h-9 bg-blue-600 rounded-full flex items-center justify-center text-white font-black text-sm shadow-lg">{userName.charAt(0).toUpperCase() || "U"}</div>
           </div>
-        )}
-      </main>
+        </header>
 
-      {/* Footer / Input Bar */}
-      <footer className="w-full px-4 pb-6 flex flex-col items-center z-40">
-        <div className="max-w-3xl w-full">
-           {/* Image Preview */}
-           {selectedImage && (
-             <div className="relative inline-block mb-2 animate-slide-up">
-               <div className="relative w-24 h-24 rounded-2xl overflow-hidden border-2 border-blue-500 shadow-xl">
-                 <img src={selectedImage} alt="Preview" className="w-full h-full object-cover" />
-                 <button onClick={() => setSelectedImage(null)} className="absolute top-1 right-1 p-1 bg-black/50 text-white rounded-full hover:bg-black/70 transition-colors">
-                   <X size={14} />
-                 </button>
-               </div>
-             </div>
-           )}
-
-           <div className={`flex flex-col gap-1 p-3 rounded-[2rem] transition-all bg-gray-100 dark:bg-gray-900 ${isLoading ? 'opacity-50' : ''}`}>
-              <textarea 
-                ref={inputRef} 
-                value={input} 
-                onChange={(e) => { setInput(e.target.value); e.target.style.height = 'auto'; e.target.style.height = Math.min(e.target.scrollHeight, 150) + 'px'; }} 
-                onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && (e.preventDefault(), handleSend())} 
-                placeholder={t.inputPlaceholder} 
-                className="bg-transparent border-none focus:ring-0 py-2 px-3 text-lg resize-none no-scrollbar" 
-                rows={1} 
-              />
-              <div className="flex items-center justify-between px-2">
-                <div className="flex gap-1">
-                  <button onClick={() => fileInputRef.current?.click()} className="p-2 text-gray-500 hover:text-blue-500 rounded-full hover:bg-gray-200 dark:hover:bg-gray-800 transition-all">
-                    <Plus size={22} />
-                  </button>
-                  <input type="file" ref={fileInputRef} hidden accept="image/*" onChange={handleImageSelect} />
-                  
-                  <button onClick={() => setIsThinkingEnabled(!isThinkingEnabled)} className={`p-2 rounded-full ${isThinkingEnabled ? 'text-blue-500' : 'text-gray-500'}`} title={t.thinkingMode}><Brain size={20} /></button>
-                  <button onClick={() => setIsWebSearchEnabled(!isWebSearchEnabled)} className={`p-2 rounded-full ${isWebSearchEnabled ? 'text-blue-500' : 'text-gray-500'}`} title={t.webSearch}><Globe size={20} /></button>
+        <main className="flex-1 overflow-y-auto no-scrollbar p-4 md:p-8 space-y-6">
+          {messages.length === 0 && (
+             <div className="h-full flex flex-col items-center justify-center text-center max-w-lg mx-auto space-y-6 animate-slide-up">
+                <div className="w-20 h-20 bg-blue-600 rounded-[2.5rem] flex items-center justify-center shadow-2xl rotate-3"><Bot size={40} className="text-white" /></div>
+                <h1 className="text-4xl font-black tracking-tight italic">Xin chào {userName || 'bạn'}!</h1>
+                <p className="text-gray-500 font-medium">Bạn muốn lập trình, học tập hay phân tích dữ liệu hôm nay? Bật <b>Thinking</b> để xử lý các yêu cầu chuyên sâu.</p>
+                <div className="flex flex-wrap justify-center gap-2">
+                   {modes.map(m => (
+                     <button key={m.id} onClick={() => setCurrentMode(m.id)} className={`px-4 py-2 rounded-2xl border text-xs font-bold transition-all ${currentMode === m.id ? 'bg-blue-600 border-blue-600 text-white' : 'bg-gray-100 dark:bg-gray-900 border-transparent text-gray-500'}`}>{m.label}</button>
+                   ))}
                 </div>
-                <button onClick={() => handleSend()} className={`p-2 rounded-full ${input.trim() || selectedImage ? 'text-blue-500' : 'text-gray-400'}`}><Sparkles size={24} /></button>
+             </div>
+          )}
+          {messages.map(m => (
+            <div key={m.id} className={`flex ${m.role === Role.USER ? 'justify-end' : 'justify-start'} animate-slide-up`}>
+              <div className={`flex gap-4 max-w-[90%] md:max-w-[85%] ${m.role === Role.USER ? 'flex-row-reverse' : ''}`}>
+                <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 mt-1 shadow-md ${m.role === Role.USER ? 'bg-blue-600' : 'bg-gray-100 dark:bg-gray-900 text-blue-500'}`}>{m.role === Role.USER ? <span className="text-xs text-white font-bold">U</span> : <Bot size={24} />}</div>
+                <div className={`p-1 ${m.role === Role.USER ? 'bg-blue-600/5 dark:bg-blue-600/10 rounded-2xl' : ''}`}>
+                  <MarkdownRenderer content={m.content} onRunCode={handleRunCode} />
+                </div>
               </div>
+            </div>
+          ))}
+          {isLoading && <div className="flex justify-start gap-4"><Bot size={24} className="text-blue-500 animate-pulse" /><TypingIndicator /></div>}
+          <div ref={messagesEndRef} className="h-20" />
+        </main>
+
+        <footer className="p-4 md:pb-8 bg-transparent z-40">
+           <div className="max-w-3xl mx-auto w-full">
+             {selectedImage && (
+               <div className="relative inline-block mb-3 animate-slide-up">
+                 <img src={selectedImage} className="w-24 h-24 object-cover rounded-2xl border-2 border-blue-500 shadow-2xl" alt="Preview" />
+                 <button onClick={() => setSelectedImage(null)} className="absolute -top-2 -right-2 p-1 bg-red-500 text-white rounded-full shadow-lg"><X size={14} /></button>
+               </div>
+             )}
+             <div className="flex flex-col p-2 bg-gray-100 dark:bg-gray-900 rounded-[2.5rem] shadow-2xl border border-transparent dark:border-gray-800 focus-within:border-blue-500/50 transition-all">
+                <textarea 
+                  value={input} 
+                  onChange={(e) => setInput(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && (e.preventDefault(), handleSend())}
+                  placeholder={t.inputPlaceholder} 
+                  className="bg-transparent border-none focus:ring-0 p-4 text-lg resize-none no-scrollbar h-auto min-h-[56px] max-h-40 font-medium"
+                  rows={1}
+                />
+                <div className="flex items-center justify-between px-3 pb-2">
+                   <div className="flex gap-1 md:gap-2">
+                      <button onClick={() => fileInputRef.current?.click()} className="p-2.5 text-gray-500 hover:text-blue-500 rounded-full transition-all hover:bg-white/10"><ImageIcon size={22} /></button>
+                      <input type="file" ref={fileInputRef} hidden accept="image/*" onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) {
+                          const reader = new FileReader();
+                          reader.onload = (ev) => setSelectedImage(ev.target?.result as string);
+                          reader.readAsDataURL(file);
+                        }
+                      }} />
+                      <button onClick={() => setIsThinkingEnabled(!isThinkingEnabled)} className={`p-2.5 rounded-full transition-all ${isThinkingEnabled ? 'text-blue-500 bg-blue-500/10' : 'text-gray-500 hover:bg-white/10'}`} title="Thinking Mode"><Brain size={22} /></button>
+                      <button onClick={() => setIsCodeExecutionEnabled(!isCodeExecutionEnabled)} className={`p-2.5 rounded-full transition-all ${isCodeExecutionEnabled ? 'text-purple-500 bg-purple-500/10' : 'text-gray-500 hover:bg-white/10'}`} title="Code Interpreter"><Terminal size={22} /></button>
+                      <button onClick={() => setIsWebSearchEnabled(!isWebSearchEnabled)} className={`p-2.5 rounded-full transition-all ${isWebSearchEnabled ? 'text-blue-500 bg-blue-500/10' : 'text-gray-500 hover:bg-white/10'}`} title="Web Search"><Globe size={22} /></button>
+                   </div>
+                   <button onClick={handleSend} className={`p-3.5 rounded-full transition-all ${input.trim() || selectedImage ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/30' : 'bg-gray-200 dark:bg-gray-800 text-gray-500'}`}><Send size={20} /></button>
+                </div>
+             </div>
            </div>
-        </div>
-      </footer>
+        </footer>
+      </div>
 
-      {/* Sidebar / History */}
-      {isSidebarOpen && (
-        <>
-          <div className="fixed inset-0 bg-black/50 z-40 backdrop-blur-sm" onClick={() => setIsSidebarOpen(false)} />
-          <aside className={`fixed inset-y-0 left-0 w-72 z-50 transform transition-all p-6 ${theme === Theme.DARK ? 'bg-gray-950 border-r border-gray-800' : 'bg-gray-50 border-r border-gray-200'} ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
-             <div className="flex items-center justify-between mb-8">
-                <h2 className="text-lg font-bold">{t.history}</h2>
-                <button onClick={() => setIsSidebarOpen(false)}><X size={20} /></button>
-             </div>
-             <button onClick={createNewSession} className="w-full p-4 rounded-2xl bg-blue-600 text-white font-bold flex items-center justify-center gap-2 mb-6 shadow-lg shadow-blue-500/20"><Plus size={18} /> {t.newChat}</button>
-             <div className="space-y-2 overflow-y-auto max-h-[70vh] no-scrollbar">
-                {sessions.map(s => (
-                  <div key={s.id} onClick={() => loadSession(s.id)} className={`group relative flex items-center justify-between p-3 rounded-xl cursor-pointer transition-all ${currentSessionId === s.id ? 'bg-blue-500/10 text-blue-500' : 'hover:bg-gray-200 dark:hover:bg-gray-800'}`}>
-                    <div className="flex items-center gap-3 overflow-hidden">
-                      <MessageSquare size={16} className="shrink-0" />
-                      <span className="text-sm truncate">{s.title}</span>
-                    </div>
-                    <button onClick={(e) => deleteSession(e, s.id)} className="opacity-0 group-hover:opacity-100 p-1 hover:text-red-500"><Trash2 size={14} /></button>
-                  </div>
-                ))}
-             </div>
-          </aside>
-        </>
-      )}
-
-      {/* Settings Modal */}
+      {/* Settings Modal (Personalization & Advanced) */}
       {isAdvancedSettingsOpen && (
         <div className="fixed inset-0 z-[100] bg-white dark:bg-black flex flex-col animate-slide-up">
-          <div className="flex items-center justify-between px-4 h-16 border-b dark:border-gray-800 bg-opacity-70 backdrop-blur-md">
-            <button onClick={() => setIsAdvancedSettingsOpen(false)}><ArrowLeft size={24} /></button>
-            <h2 className="text-xl font-bold">{t.personalization}</h2>
-            <button onClick={savePersonalization} className="p-2 bg-gray-100 dark:bg-gray-800 rounded-full text-blue-500"><Check size={24} /></button>
-          </div>
-          <div className="flex-1 overflow-y-auto p-6 max-w-2xl mx-auto w-full space-y-8">
-             <div className="space-y-4">
-               <label className="text-sm font-bold text-gray-500">{t.modes.standard}</label>
-               <div className="grid grid-cols-2 gap-2">
-                  {modes.map(m => (
-                    <button key={m.id} onClick={() => setCurrentMode(m.id)} className={`flex flex-col items-center gap-2 p-4 rounded-2xl border transition-all ${currentMode === m.id ? 'bg-blue-600 text-white border-blue-600 shadow-xl' : 'bg-gray-50 dark:bg-gray-900 border-transparent'}`}>
-                       <m.icon size={24} /> <span className="text-xs font-bold">{m.label}</span>
-                    </button>
-                  ))}
-               </div>
-             </div>
-             <div className="space-y-4">
-                <label className="text-sm font-bold text-gray-500">{t.nickname}</label>
-                <input type="text" value={userName} onChange={(e) => setUserName(e.target.value)} className="w-full p-4 bg-gray-100 dark:bg-gray-900 rounded-2xl outline-none" />
-                <label className="text-sm font-bold text-gray-500">{t.job}</label>
-                <input type="text" value={userJob} onChange={(e) => setUserJob(e.target.value)} className="w-full p-4 bg-gray-100 dark:bg-gray-900 rounded-2xl outline-none" />
-                <label className="text-sm font-bold text-gray-500">{t.customInstructions}</label>
-                <textarea rows={4} value={customInstructions} onChange={(e) => setCustomInstructions(e.target.value)} className="w-full p-4 bg-gray-100 dark:bg-gray-900 rounded-2xl outline-none resize-none" />
-             </div>
+          <header className="h-16 flex items-center justify-between px-6 border-b dark:border-gray-800">
+            <button onClick={() => setIsAdvancedSettingsOpen(false)} className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800"><ArrowLeft size={24} /></button>
+            <h2 className="text-xl font-black uppercase italic tracking-wider text-blue-500">{t.personalization}</h2>
+            <button onClick={handleSaveSettings} className="p-2.5 bg-blue-600 text-white rounded-full shadow-lg shadow-blue-500/20"><Check size={24} /></button>
+          </header>
+          
+          <div className="flex-1 overflow-y-auto p-6 md:p-12 max-w-3xl mx-auto w-full space-y-10">
+             <section className="space-y-4">
+                <h3 className="text-xs font-black text-gray-400 uppercase tracking-widest flex items-center gap-2"><Cpu size={14} /> AI Engine</h3>
+                <div className="grid grid-cols-2 gap-3">
+                   {Object.entries(MODELS).map(([key, model]) => (
+                     <button key={model.id} onClick={() => setSelectedModel(model.id)} className={`p-4 rounded-3xl border-2 text-left transition-all ${selectedModel === model.id ? 'border-blue-600 bg-blue-600/5' : 'border-gray-100 dark:border-gray-800'}`}>
+                        <div className={`font-black ${selectedModel === model.id ? 'text-blue-500' : 'text-gray-500'}`}>{model.name}</div>
+                        <div className="text-[10px] text-gray-400 font-bold mt-1 uppercase">{model.id.includes('pro') ? 'Thích hợp cho tư duy cao' : 'Xử lý tốc độ cao'}</div>
+                     </button>
+                   ))}
+                </div>
+             </section>
+
+             <section className="space-y-4">
+                <h3 className="text-xs font-black text-gray-400 uppercase tracking-widest flex items-center gap-2"><User size={14} /> Hồ sơ cá nhân</h3>
+                <div className="space-y-4">
+                   <div className="space-y-2">
+                      <label className="text-sm font-bold text-gray-500">Biệt danh của bạn</label>
+                      <input type="text" value={userName} onChange={(e) => setUserName(e.target.value)} className="w-full p-4 bg-gray-50 dark:bg-gray-900 rounded-2xl outline-none focus:ring-2 ring-blue-500/20 font-bold" placeholder="VD: Nhut Coder" />
+                   </div>
+                   <div className="space-y-2">
+                      <label className="text-sm font-bold text-gray-500">Nghề nghiệp / Lĩnh vực quan tâm</label>
+                      <input type="text" value={userJob} onChange={(e) => setUserJob(e.target.value)} className="w-full p-4 bg-gray-50 dark:bg-gray-900 rounded-2xl outline-none focus:ring-2 ring-blue-500/20 font-bold" placeholder="VD: Full-stack Developer" />
+                   </div>
+                   <div className="space-y-2">
+                      <label className="text-sm font-bold text-gray-500">Hướng dẫn tùy chỉnh cho AI</label>
+                      <textarea rows={4} value={customInstructions} onChange={(e) => setCustomInstructions(e.target.value)} className="w-full p-4 bg-gray-50 dark:bg-gray-900 rounded-2xl outline-none focus:ring-2 ring-blue-500/20 font-medium resize-none" placeholder="Hãy luôn trả lời tôi một cách hài hước và sử dụng ví dụ về lập trình..." />
+                   </div>
+                </div>
+             </section>
+
+             <section className="space-y-4 pb-12">
+                <h3 className="text-xs font-black text-gray-400 uppercase tracking-widest flex items-center gap-2"><Layers size={14} /> Chế độ hoạt động</h3>
+                <div className="grid grid-cols-2 gap-3">
+                   {modes.map(m => (
+                     <button key={m.id} onClick={() => setCurrentMode(m.id)} className={`flex items-center gap-3 p-4 rounded-3xl border-2 transition-all ${currentMode === m.id ? 'border-blue-600 bg-blue-600/5 text-blue-500' : 'border-gray-100 dark:border-gray-800 text-gray-500'}`}>
+                        <m.icon size={20} />
+                        <span className="font-black text-sm">{m.label}</span>
+                     </button>
+                   ))}
+                </div>
+             </section>
           </div>
         </div>
       )}
 
-      {/* Privacy Modal */}
-      {isPrivacyOpen && (
-        <div className="fixed inset-0 z-[100] bg-white dark:bg-black flex flex-col animate-slide-up">
-          <div className="flex items-center justify-between px-4 h-16 border-b dark:border-gray-800">
-            <button onClick={() => setIsPrivacyOpen(false)}><ArrowLeft size={24} /></button>
-            <h2 className="text-xl font-bold">{t.privacy}</h2>
-            <div className="w-10" />
-          </div>
-          <div className="p-8 max-w-2xl mx-auto w-full space-y-8">
-             <div className="text-center space-y-4">
-                <div className="w-20 h-20 bg-blue-600/10 rounded-full flex items-center justify-center mx-auto"><Shield size={40} className="text-blue-600" /></div>
-                <h1 className="text-2xl font-bold">{t.privacyTitle}</h1>
-                <p className="text-lg text-blue-600 font-bold">{t.privacyHackathon}</p>
-             </div>
-             <p className="text-gray-500 text-center leading-relaxed">{t.privacyContent}</p>
-             <button onClick={() => { setIsPrivacyOpen(false); localStorage.setItem('nhutaibot_privacy_read', 'true'); setShowPrivacyNotice(false); }} className="w-full py-4 bg-blue-600 text-white rounded-2xl font-bold shadow-xl shadow-blue-500/20">{t.dismiss}</button>
-          </div>
-        </div>
-      )}
+      {/* Canvas Sidebar Panel (Giữ nguyên tính năng chạy mã) */}
+      <div className={`fixed inset-y-0 right-0 z-[60] bg-white dark:bg-gray-950 border-l dark:border-gray-800 shadow-2xl canvas-panel ${canvasState.open ? 'translate-x-0 w-full lg:w-[45%]' : 'translate-x-full w-0'}`}>
+         <div className="flex flex-col h-full">
+            <header className="h-14 flex items-center justify-between px-4 border-b dark:border-gray-800">
+               <div className="flex items-center gap-2">
+                  <Layout size={18} className="text-blue-500" />
+                  <span className="font-black uppercase text-xs tracking-tighter">NhutAIbot Canvas</span>
+                  <span className="text-[10px] px-2 py-0.5 bg-blue-500/10 text-blue-500 rounded-full uppercase font-black">{canvasState.lang}</span>
+               </div>
+               <div className="flex items-center gap-2">
+                  {canvasState.lang === 'python' && <button onClick={() => runPython(canvasState.code)} className="p-2 text-emerald-500 hover:bg-emerald-500/10 rounded-lg"><Play size={18} fill="currentColor" /></button>}
+                  <button onClick={() => setCanvasState(p => ({ ...p, open: false }))} className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg"><X size={20} /></button>
+               </div>
+            </header>
+            <div className="flex-1 relative bg-white overflow-hidden">
+               {canvasState.lang === 'html' || canvasState.lang === 'javascript' || canvasState.lang === 'js' || canvasState.lang === 'css' ? (
+                  <iframe 
+                    title="Canvas Preview"
+                    srcDoc={canvasState.lang === 'html' ? canvasState.code : `<html><head><script src="https://cdn.tailwindcss.com"></script></head><body><script>${canvasState.code}</script></body></html>`}
+                    className="w-full h-full border-none"
+                    sandbox="allow-scripts"
+                  />
+               ) : canvasState.lang === 'python' ? (
+                  <div className="h-full bg-gray-950 p-6 font-mono text-sm overflow-y-auto">
+                     <div className="flex items-center gap-2 text-gray-500 mb-4 border-b border-gray-800 pb-2">
+                        <Terminal size={14} /> <span>Python Output</span>
+                     </div>
+                     {isPythonLoading ? (
+                        <div className="flex items-center gap-2 text-blue-400 animate-pulse font-black"><Zap size={14} className="animate-spin" /> ĐANG TÍNH TOÁN...</div>
+                     ) : (
+                        <pre className="text-gray-100 whitespace-pre-wrap">{pythonOutput || "> Sẵn sàng."}</pre>
+                     )}
+                  </div>
+               ) : (
+                  <div className="h-full flex items-center justify-center text-gray-500 font-bold">
+                     Định dạng {canvasState.lang} chưa hỗ trợ Live Preview.
+                  </div>
+               )}
+            </div>
+         </div>
+      </div>
     </div>
   );
 };

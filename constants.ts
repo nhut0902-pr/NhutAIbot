@@ -19,8 +19,8 @@ export const TRANSLATIONS = {
     advanced: "Nâng cao",
     webSearch: "Tìm kiếm web",
     webSearchDesc: "Tìm kiếm web để tìm câu trả lời",
-    codeExecution: "Mã",
-    codeExecutionDesc: "Thực thi mã bằng Trình thông dịch mã",
+    codeExecution: "Thực thi mã",
+    codeExecutionDesc: "Bot tự chạy mã để giải quyết vấn đề phức tạp",
     canvas: "Canvas",
     canvasDesc: "Làm việc trên văn bản và mã",
     language: "Ngôn ngữ",
@@ -37,8 +37,8 @@ export const TRANSLATIONS = {
     privacyContent: "Dữ liệu được lưu trữ cục bộ (Local Storage). Chúng tôi không lưu trữ dữ liệu cá nhân trên máy chủ riêng.",
     modes: {
       standard: "Tiêu chuẩn",
-      learning: "Học tập",
-      coder: "Coder Mode",
+      learning: "Học tập + Bài tập",
+      coder: "Code Interpreter",
       assistant: "Trợ lý AI"
     },
     safetyNotice: "Nếu không chắc chắn, NhutAIbot sẽ nói rõ thay vì bịa đặt.",
@@ -60,8 +60,8 @@ export const TRANSLATIONS = {
     advanced: "Advanced",
     webSearch: "Web search",
     webSearchDesc: "Search the web for answers",
-    codeExecution: "Code",
-    codeExecutionDesc: "Execute code using Code Interpreter",
+    codeExecution: "Code Execution",
+    codeExecutionDesc: "Bot runs code to solve complex problems",
     canvas: "Canvas",
     canvasDesc: "Collaborate on text and code",
     language: "Language",
@@ -78,8 +78,8 @@ export const TRANSLATIONS = {
     privacyContent: "Data is stored locally (Local Storage). We do not store personal data on private servers.",
     modes: {
       standard: "Standard",
-      learning: "Learning",
-      coder: "Coder Mode",
+      learning: "Tutor + Exercises",
+      coder: "Code Interpreter",
       assistant: "AI Assistant"
     },
     safetyNotice: "If unsure, NhutAIbot will clarify rather than hallucinate.",
@@ -94,16 +94,16 @@ export const getSystemInstruction = (lang: string, mode: string = 'standard', fa
   let modeInstruction = "";
   if (mode === 'learning') {
     modeInstruction = lang === 'vi' 
-      ? "\nCHẾ ĐỘ HỌC TẬP: Giải thích từng bước, tạo quiz/flashcard, hướng dẫn lộ trình học."
-      : "\nLEARNING MODE: Explain step-by-step, create quizzes, and provide learning roadmaps.";
+      ? "\nCHẾ ĐỘ HỌC TẬP (CÓ BÀI TẬP): Bạn là một giáo viên tương tác. Sau khi giải thích một khái niệm, hãy CHỦ ĐỘNG ra một bài tập nhỏ hoặc câu hỏi kiểm tra cho người dùng. Khi họ trả lời, hãy CHẤM ĐIỂM, chỉ ra lỗi sai và gợi ý cách sửa. Hãy tạo không khí học tập sôi nổi."
+      : "\nLEARNING MODE (WITH EXERCISES): You are an interactive tutor. After explaining a concept, PROACTIVELY give a small exercise or test question to the user. When they answer, GRADE it, point out mistakes, and suggest corrections. Keep the learning atmosphere engaging.";
   } else if (mode === 'coder') {
     modeInstruction = lang === 'vi'
-      ? "\nCODER MODE: Highlight code, debug lỗi, giải thích code dòng nào sai. Ưu tiên độ chính xác cao."
-      : "\nCODER MODE: Highlight code, debug errors, explain logic. Prioritize technical precision.";
+      ? "\nCHẾ ĐỘ CODE INTERPRETER: Bạn có quyền thực thi mã Python. Hãy sử dụng công cụ `codeExecution` để giải các bài toán, xử lý dữ liệu Excel/CSV, vẽ biểu đồ hoặc kiểm tra thuật toán một cách thực tế. Luôn chạy thử mã để đảm bảo kết quả chính xác trước khi trả lời."
+      : "\nCODE INTERPRETER MODE: You have the ability to execute Python code. Use the `codeExecution` tool to solve math problems, process Excel/CSV data, create charts, or test algorithms realistically. Always run the code to ensure accuracy before responding.";
   } else if (mode === 'assistant') {
     modeInstruction = lang === 'vi'
-      ? "\nTRỢ LÝ AI: Tóm tắt nội dung dài, viết lại cho dễ hiểu, lập kế hoạch và gợi ý ý tưởng."
-      : "\nAI ASSISTANT: Summarize content, rewrite for clarity, create plans and suggest ideas.";
+      ? "\nTRỢ LÝ AI: Tóm tắt nội dung dài, viết lại cho dễ hiểu, lập kế hoạch và gợi ý ý tưởng chuyên sâu."
+      : "\nAI ASSISTANT: Summarize long content, rewrite for clarity, create detailed plans, and suggest deep ideas.";
   }
 
   const safetyRules = lang === 'vi'
@@ -111,8 +111,8 @@ export const getSystemInstruction = (lang: string, mode: string = 'standard', fa
     : "\nSAFETY RULES: If unsure -> clarify. Do not hallucinate.";
 
   const base = lang === 'en' 
-    ? "You are NhutAIbot, a pro AI assistant. Use Markdown."
-    : "Bạn là NhutAIbot, trợ lý AI chuyên nghiệp. Sử dụng Markdown.";
+    ? "You are NhutAIbot, a pro AI assistant powered by Gemini 3. Use Markdown."
+    : "Bạn là NhutAIbot, trợ lý AI chuyên nghiệp được hỗ trợ bởi Gemini 3. Sử dụng Markdown.";
 
   return `${base}${modeInstruction}${customContext}${memoryContext}${safetyRules}`;
 };

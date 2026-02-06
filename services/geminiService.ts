@@ -18,22 +18,28 @@ export const initializeChat = (
   thinkingBudget: number = 0,
   history: Message[] = [],
   isWebSearchEnabled: boolean = false,
+  isCodeExecutionEnabled: boolean = false,
   temperature: number = 0.7,
   customSystemInstruction?: string
 ): void => {
   const ai = getAIInstance();
   
+  const tools: any[] = [];
+  if (isWebSearchEnabled) {
+    tools.push({ googleSearch: {} });
+  }
+  if (isCodeExecutionEnabled) {
+    tools.push({ codeExecution: {} });
+  }
+
   const config: any = {
     systemInstruction: customSystemInstruction || getSystemInstruction('vi'),
     temperature: temperature,
+    tools: tools.length > 0 ? tools : undefined,
   };
 
   if (thinkingBudget > 0) {
     config.thinkingConfig = { thinkingBudget };
-  }
-
-  if (isWebSearchEnabled) {
-    config.tools = [{ googleSearch: {} }];
   }
 
   const geminiHistory = history.map(msg => ({
@@ -52,10 +58,11 @@ export const resetChat = (
   modelId: string, 
   thinkingBudget: number, 
   isWebSearchEnabled: boolean,
+  isCodeExecutionEnabled: boolean,
   temperature: number,
   customSystemInstruction?: string
 ): void => {
-  initializeChat(modelId, thinkingBudget, [], isWebSearchEnabled, temperature, customSystemInstruction);
+  initializeChat(modelId, thinkingBudget, [], isWebSearchEnabled, isCodeExecutionEnabled, temperature, customSystemInstruction);
 };
 
 export const sendMessageStream = async (

@@ -6,6 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>NhutAIbot | Gemini Pro</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/pyodide/v0.26.4/full/pyodide.js"></script>
     <script>
       tailwind.config = {
         darkMode: 'class',
@@ -51,35 +52,16 @@
       .no-scrollbar::-webkit-scrollbar { display: none; }
       .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
       
-      .gemini-pill {
-        border: 1px solid transparent;
-        transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-      }
-      .dark .gemini-pill {
-        background-color: #1e1f20;
-      }
-      .gemini-pill:hover {
-        background-color: #f1f3f4;
-        border-color: #dadce0;
-      }
-      .dark .gemini-pill:hover {
-        background-color: #2d2e30;
-        border-color: #3c4043;
-      }
-
-      .input-bar-container {
-        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-      }
-      .dark .input-bar-container {
-        box-shadow: 0 4px 20px rgba(0,0,0,0.5);
-      }
-
       @keyframes slideUp {
         from { transform: translateY(20px); opacity: 0; }
         to { transform: translateY(0); opacity: 1; }
       }
       .animate-slide-up {
         animation: slideUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+      }
+
+      .canvas-panel {
+        transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1);
       }
     </style>
   <script type="importmap">

@@ -4,7 +4,7 @@ import {
   Send, Moon, Sun, Bot, User, Settings, Sparkles, Brain, X, Plus, 
   MessageSquare, Menu, Globe, UserCircle, Layers, Database, Check, 
   ArrowLeft, ChevronDown, ChevronUp, Languages, Layout, Shield, AlertCircle,
-  BookOpen, Code, Lightbulb, Zap, Trash2, Image as ImageIcon, Terminal, Play, Cpu
+  BookOpen, Code, Lightbulb, Zap, Trash2, Image as ImageIcon, Terminal, Play, Cpu, History
 } from 'lucide-react';
 import { GenerateContentResponse } from "@google/genai";
 
@@ -22,13 +22,24 @@ const App: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [theme, setTheme] = useState<Theme>(() => (localStorage.getItem('nhutaibot_theme') as Theme) || Theme.DARK);
   const [language, setLanguage] = useState<Language>(() => (localStorage.getItem('nhutaibot_lang') as Language) || Language.VI);
+  
+  // Modal/Panel states
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isAdvancedSettingsOpen, setIsAdvancedSettingsOpen] = useState(false);
+  const [isTerminalOpen, setIsTerminalOpen] = useState(false);
   
   // Canvas State
   const [canvasState, setCanvasState] = useState<{ open: boolean, code: string, lang: string }>({ open: false, code: '', lang: '' });
   const [pythonOutput, setPythonOutput] = useState<string>('');
   const [isPythonLoading, setIsPythonLoading] = useState(false);
+
+  // Terminal State
+  const [terminalHistory, setTerminalHistory] = useState<string[]>(['Chào mừng tới NhutShell v1.0. Gõ "help" để bắt đầu.']);
+  const [terminalInput, setTerminalInput] = useState('');
+  const [installedCommands, setInstalledCommands] = useState<Record<string, string>>(() => {
+    const saved = localStorage.getItem('nhut_installed_cmds');
+    return saved ? JSON.parse(saved) : {};
+  });
 
   // User personalization states
   const [userName, setUserName] = useState<string>(localStorage.getItem('nhutaibot_username') || '');
@@ -44,6 +55,7 @@ const App: React.FC = () => {
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const terminalEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pyodideRef = useRef<any>(null);
   const t = TRANSLATIONS[language];
@@ -156,10 +168,75 @@ sys.stdout = io.StringIO()
       await py.runPythonAsync(code);
       const stdout = py.runPython("sys.stdout.getvalue()");
       setPythonOutput(stdout || "Chạy thành công (Không có output)");
+      return stdout || "Thực thi hoàn tất.";
     } catch (err: any) {
       setPythonOutput(`LỖI PYTHON:\n${err.message}`);
+      return `ERROR: ${err.message}`;
     } finally {
       setIsPythonLoading(false);
+    }
+  };
+
+  const processTerminalCommand = async (cmd: string) => {
+    const fullCmd = cmd.trim();
+    if (!fullCmd) return;
+    
+    setTerminalHistory(prev => [...prev, `> ${fullCmd}`]);
+    const args = fullCmd.split(' ');
+    const command = args[0].toLowerCase();
+
+    // Handle Integrated Commands
+    if (command === 'help') {
+      setTerminalHistory(prev => [...prev, 
+        'Danh sách lệnh:',
+        '- help: Hiển thị hướng dẫn này',
+        '- clear: Xóa màn hình',
+        '- ls: Danh sách lệnh đã cài đặt',
+        '- py <mã>: Thực thi Python',
+        '- js <mã>: Thực thi Javascript',
+        '- install-cmd <tên> "<mã>": Cài đặt lệnh mới',
+        '- whoami: Thông tin người dùng',
+        '- date: Thời gian hiện tại'
+      ]);
+    } else if (command === 'clear') {
+      setTerminalHistory(['NhutShell v1.0']);
+    } else if (command === 'whoami') {
+      setTerminalHistory(prev => [...prev, `User: ${userName || 'Khách'}, Job: ${userJob || 'N/A'}`]);
+    } else if (command === 'date') {
+      setTerminalHistory(prev => [...prev, new Date().toLocaleString()]);
+    } else if (command === 'ls') {
+      const keys = Object.keys(installedCommands);
+      setTerminalHistory(prev => [...prev, keys.length ? `Lệnh đã cài: ${keys.join(', ')}` : 'Chưa cài lệnh nào.']);
+    } else if (command === 'py') {
+      const code = fullCmd.substring(3);
+      const res = await runPython(code);
+      setTerminalHistory(prev => [...prev, res]);
+    } else if (command === 'js') {
+      const code = fullCmd.substring(3);
+      try {
+        const res = eval(code);
+        setTerminalHistory(prev => [...prev, String(res)]);
+      } catch (e: any) {
+        setTerminalHistory(prev => [...prev, `JS ERROR: ${e.message}`]);
+      }
+    } else if (command === 'install-cmd') {
+      const name = args[1];
+      const script = fullCmd.match(/"([^"]+)"/)?.[1];
+      if (name && script) {
+        const newCmds = { ...installedCommands, [name]: script };
+        setInstalledCommands(newCmds);
+        localStorage.setItem('nhut_installed_cmds', JSON.stringify(newCmds));
+        setTerminalHistory(prev => [...prev, `Đã cài đặt lệnh '${name}' thành công.`]);
+      } else {
+        setTerminalHistory(prev => [...prev, 'Sai cú pháp. VD: install-cmd hi "echo Hello"']);
+      }
+    } else if (installedCommands[command]) {
+      // Execute installed command
+      processTerminalCommand(installedCommands[command]);
+    } else if (command === 'echo') {
+      setTerminalHistory(prev => [...prev, args.slice(1).join(' ')]);
+    } else {
+      setTerminalHistory(prev => [...prev, `Lệnh '${command}' không tồn tại. Gõ 'help' để xem danh sách.`]);
     }
   };
 
@@ -201,6 +278,7 @@ sys.stdout = io.StringIO()
   };
 
   useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages, isLoading]);
+  useEffect(() => { terminalEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [terminalHistory]);
 
   const modes = [
     { id: 'standard', icon: Zap, label: t.modes.standard, color: 'text-blue-500' },
@@ -219,13 +297,23 @@ sys.stdout = io.StringIO()
           <button onClick={() => setIsSidebarOpen(false)} className="lg:hidden p-2"><X size={20} /></button>
         </div>
         <button onClick={createNewSession} className="w-full flex items-center justify-center gap-2 p-3 bg-blue-600 text-white rounded-xl font-bold mb-4 shadow-lg shadow-blue-500/20 hover:scale-[1.02] active:scale-95 transition-all"><Plus size={18} /> {t.newChat}</button>
-        <div className="flex-1 overflow-y-auto space-y-2 no-scrollbar">
+        
+        <div className="flex-1 overflow-y-auto space-y-2 no-scrollbar mb-4">
           {sessions.map(s => (
             <div key={s.id} onClick={() => loadSession(s.id)} className={`p-3 rounded-xl cursor-pointer transition-all flex items-center justify-between group ${currentSessionId === s.id ? 'bg-blue-600/10 text-blue-500' : 'hover:bg-gray-200 dark:hover:bg-gray-800 text-gray-500'}`}>
               <span className="truncate text-sm font-medium">{s.title}</span>
               <Trash2 size={14} className="opacity-0 group-hover:opacity-100 text-red-500 hover:scale-125 transition-all" onClick={(e) => { e.stopPropagation(); /* delete logic */ }} />
             </div>
           ))}
+        </div>
+
+        <div className="pt-4 border-t dark:border-gray-800 space-y-1">
+           <button onClick={() => setIsTerminalOpen(true)} className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-gray-200 dark:hover:bg-gray-800 transition-all font-bold text-sm text-purple-500">
+              <Terminal size={18} /> NhutShell Virtual
+           </button>
+           <button onClick={() => setIsAdvancedSettingsOpen(true)} className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-gray-200 dark:hover:bg-gray-800 transition-all font-bold text-sm text-gray-500">
+              <Settings size={18} /> {t.settings}
+           </button>
         </div>
       </aside>
 
@@ -247,7 +335,6 @@ sys.stdout = io.StringIO()
 
           <div className="flex items-center gap-1 md:gap-3">
             <button onClick={() => setTheme(theme === Theme.DARK ? Theme.LIGHT : Theme.DARK)} className="p-2.5 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-500">{theme === Theme.DARK ? <Sun size={20} /> : <Moon size={20} />}</button>
-            <button onClick={() => setIsAdvancedSettingsOpen(true)} className="p-2.5 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-500"><Settings size={20} /></button>
             <div className="w-9 h-9 bg-blue-600 rounded-full flex items-center justify-center text-white font-black text-sm shadow-lg">{userName.charAt(0).toUpperCase() || "U"}</div>
           </div>
         </header>
@@ -257,7 +344,7 @@ sys.stdout = io.StringIO()
              <div className="h-full flex flex-col items-center justify-center text-center max-w-lg mx-auto space-y-6 animate-slide-up">
                 <div className="w-20 h-20 bg-blue-600 rounded-[2.5rem] flex items-center justify-center shadow-2xl rotate-3"><Bot size={40} className="text-white" /></div>
                 <h1 className="text-4xl font-black tracking-tight italic">Xin chào {userName || 'bạn'}!</h1>
-                <p className="text-gray-500 font-medium">Bạn muốn lập trình, học tập hay phân tích dữ liệu hôm nay? Bật <b>Thinking</b> để xử lý các yêu cầu chuyên sâu.</p>
+                <p className="text-gray-500 font-medium">Bật <b>NhutShell</b> để thực thi lệnh hoặc dùng <b>Canvas</b> để thiết kế trực tiếp.</p>
                 <div className="flex flex-wrap justify-center gap-2">
                    {modes.map(m => (
                      <button key={m.id} onClick={() => setCurrentMode(m.id)} className={`px-4 py-2 rounded-2xl border text-xs font-bold transition-all ${currentMode === m.id ? 'bg-blue-600 border-blue-600 text-white' : 'bg-gray-100 dark:bg-gray-900 border-transparent text-gray-500'}`}>{m.label}</button>
@@ -318,6 +405,41 @@ sys.stdout = io.StringIO()
         </footer>
       </div>
 
+      {/* Virtual Terminal Overlay */}
+      {isTerminalOpen && (
+        <div className="fixed inset-0 z-[110] bg-black flex flex-col animate-slide-up font-mono">
+           <header className="h-12 bg-gray-900 flex items-center justify-between px-4 border-b border-gray-800">
+              <div className="flex items-center gap-2 text-emerald-500">
+                 <Terminal size={16} />
+                 <span className="text-sm font-bold tracking-tighter uppercase">NhutShell Terminal v1.0</span>
+              </div>
+              <button onClick={() => setIsTerminalOpen(false)} className="p-1.5 text-gray-500 hover:text-white"><X size={20} /></button>
+           </header>
+           <div className="flex-1 overflow-y-auto p-4 space-y-1 text-emerald-400 no-scrollbar bg-black">
+              {terminalHistory.map((line, i) => (
+                <div key={i} className="whitespace-pre-wrap break-all leading-relaxed">{line}</div>
+              ))}
+              <div ref={terminalEndRef} />
+           </div>
+           <div className="p-4 bg-black border-t border-gray-900 flex items-center gap-2">
+              <span className="text-emerald-500 font-bold">$</span>
+              <input 
+                autoFocus
+                type="text" 
+                value={terminalInput}
+                onChange={(e) => setTerminalInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    processTerminalCommand(terminalInput);
+                    setTerminalInput('');
+                  }
+                }}
+                className="flex-1 bg-transparent border-none outline-none text-emerald-400 focus:ring-0"
+              />
+           </div>
+        </div>
+      )}
+
       {/* Settings Modal (Personalization & Advanced) */}
       {isAdvancedSettingsOpen && (
         <div className="fixed inset-0 z-[100] bg-white dark:bg-black flex flex-col animate-slide-up">
@@ -373,7 +495,7 @@ sys.stdout = io.StringIO()
         </div>
       )}
 
-      {/* Canvas Sidebar Panel (Giữ nguyên tính năng chạy mã) */}
+      {/* Canvas Sidebar Panel */}
       <div className={`fixed inset-y-0 right-0 z-[60] bg-white dark:bg-gray-950 border-l dark:border-gray-800 shadow-2xl canvas-panel ${canvasState.open ? 'translate-x-0 w-full lg:w-[45%]' : 'translate-x-full w-0'}`}>
          <div className="flex flex-col h-full">
             <header className="h-14 flex items-center justify-between px-4 border-b dark:border-gray-800">

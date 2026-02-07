@@ -20,6 +20,7 @@ export interface Message {
   content: string;
   timestamp: Date | string;
   isError?: boolean;
+  isImage?: boolean;
   sources?: Source[];
 }
 
@@ -46,4 +47,12 @@ export interface SavedPrompt {
 export enum Theme {
   LIGHT = 'light',
   DARK = 'dark'
+}
+
+export type AccentColor = 'blue' | 'emerald' | 'rose' | 'amber' | 'purple';
+
+export interface MemoryFact {
+  id: string;
+  text: string;
+  timestamp: string;
 }

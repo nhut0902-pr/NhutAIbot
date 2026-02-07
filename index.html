@@ -4,9 +4,10 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>NhutAIbot | Gemini Pro</title>
+    <title>NhutAIbot Ultimate | Gemini Pro</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/pyodide/v0.26.4/full/pyodide.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
     <script>
       tailwind.config = {
         darkMode: 'class',
@@ -14,55 +15,31 @@
           extend: {
             fontFamily: {
               sans: ['Inter', 'system-ui', 'sans-serif'],
+              mono: ['Fira Code', 'monospace'],
             },
             colors: {
               gemini: {
                 bgLight: '#f0f4f9',
-                bgDark: '#131314',
-                cardLight: '#ffffff',
-                cardDark: '#1e1f20',
-                inputLight: '#e9eef6',
-                inputDark: '#1e1f20',
-                textLight: '#1f1f1f',
-                textDark: '#e3e3e3',
-                accent: '#0b57d0'
+                bgDark: '#0b0b0b',
+                accent: '#3b82f6'
               }
             }
           },
         },
       }
     </script>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
     <style>
-      :root {
-        --bg-color: #ffffff;
-        --text-color: #1f1f1f;
-      }
-      .dark {
-        --bg-color: #000000;
-        --text-color: #e3e3e3;
-      }
-      body {
-        font-family: 'Inter', sans-serif;
-        background-color: var(--bg-color);
-        color: var(--text-color);
-        transition: background-color 0.3s ease, color 0.3s ease;
-      }
-      
+      :root { --bg-color: #ffffff; --accent-color: #3b82f6; }
+      .dark { --bg-color: #000000; }
+      body { font-family: 'Inter', sans-serif; background-color: var(--bg-color); transition: background-color 0.3s ease; }
       .no-scrollbar::-webkit-scrollbar { display: none; }
       .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
-      
-      @keyframes slideUp {
-        from { transform: translateY(20px); opacity: 0; }
-        to { transform: translateY(0); opacity: 1; }
-      }
-      .animate-slide-up {
-        animation: slideUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
-      }
-
-      .canvas-panel {
-        transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1);
-      }
+      @keyframes slideUp { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+      .animate-slide-up { animation: slideUp 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+      .accent-bg { background-color: var(--accent-color); }
+      .accent-text { color: var(--accent-color); }
+      .accent-border { border-color: var(--accent-color); }
     </style>
   <script type="importmap">
 {
@@ -79,7 +56,7 @@
 }
 </script>
 </head>
-  <body class="dark transition-colors duration-500">
+  <body class="dark overflow-hidden">
     <div id="root"></div>
     <script type="module" src="/index.tsx"></script>
   </body>

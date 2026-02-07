@@ -28,6 +28,8 @@ export const TRANSLATIONS = {
     language: "Ngôn ngữ",
     inputPlaceholder: "Nhắn NhutAIbot...",
     thinking: "Đang suy nghĩ...",
+    checkAnswer: "Đang tự kiểm tra câu trả lời...",
+    suggesting: "Đang tạo gợi ý tiếp theo...",
     thinkingMode: "Suy nghĩ sâu",
     searching: "Đang tìm kiếm nguồn tin...",
     error: "Đã có lỗi xảy ra. Vui lòng thử lại.",
@@ -37,6 +39,13 @@ export const TRANSLATIONS = {
     privacyTitle: "Chính sách Quyền riêng tư NhutAIbot",
     privacyHackathon: "NhutAIbot được tạo ra để tham gia Nhutcoder Hackathon 2025.",
     privacyContent: "Dữ liệu được lưu trữ cục bộ (Local Storage). Chúng tôi không lưu trữ dữ liệu cá nhân trên máy chủ riêng.",
+    library: "Thư viện Prompt",
+    addPrompt: "Thêm mẫu câu",
+    promptTitle: "Tiêu đề",
+    promptContent: "Nội dung lệnh",
+    promptCategory: "Danh mục",
+    usePrompt: "Sử dụng",
+    delete: "Xóa",
     modes: {
       standard: "Tiêu chuẩn",
       learning: "Học tập + Bài tập",
@@ -71,6 +80,8 @@ export const TRANSLATIONS = {
     language: "Language",
     inputPlaceholder: "Message NhutAIbot...",
     thinking: "Thinking...",
+    checkAnswer: "Self-checking answer...",
+    suggesting: "Generating suggestions...",
     thinkingMode: "Deep Thinking",
     searching: "Searching web sources...",
     error: "An error occurred. Please try again.",
@@ -80,6 +91,13 @@ export const TRANSLATIONS = {
     privacyTitle: "NhutAIbot Privacy Policy",
     privacyHackathon: "NhutAIbot was created for Nhutcoder Hackathon 2025.",
     privacyContent: "Data is stored locally (Local Storage). We do not store personal data on private servers.",
+    library: "Prompt Library",
+    addPrompt: "Add Prompt",
+    promptTitle: "Title",
+    promptContent: "Prompt Content",
+    promptCategory: "Category",
+    usePrompt: "Use",
+    delete: "Delete",
     modes: {
       standard: "Standard",
       learning: "Tutor + Exercises",
@@ -95,6 +113,15 @@ export const getSystemInstruction = (lang: string, mode: string = 'standard', fa
   const memoryContext = facts.length > 0 ? `\n\nLONG-TERM MEMORY ABOUT THE USER:\n- ${facts.join('\n- ')}` : '';
   const customContext = custom ? `\n\nUSER CUSTOM INSTRUCTIONS:\n${custom}` : '';
   
+  // Logic Self-Check và Auto Suggest
+  const qualityControl = lang === 'vi'
+    ? "\n\nQUY TRÌNH KIỂM SOÁT CHẤT LƯỢNG (SELF-CHECK & AUTO-SUGGEST):" +
+      "\n1. SELF-CHECK: Trước khi đưa ra câu trả lời cuối cùng, hãy tự rà soát lại thông tin. Nếu không chắc chắn về sự thật, hãy nói rõ 'Tôi không chắc chắn' thay vì bịa đặt." +
+      "\n2. AUTO-SUGGEST: Ở CUỐI câu trả lời, hãy LUÔN LUÔN đưa ra 3 gợi ý ngắn gọn để người dùng có thể hỏi tiếp. Định dạng như sau:\n\n**Gợi ý tiếp theo:**\n- [Gợi ý 1]\n- [Gợi ý 2]\n- [Gợi ý 3]"
+    : "\n\nQUALITY CONTROL PROCESS (SELF-CHECK & AUTO-SUGGEST):" +
+      "\n1. SELF-CHECK: Before outputting, verify your facts. If unsure, explicitly state it rather than hallucinating." +
+      "\n2. AUTO-SUGGEST: AT THE END of your response, ALWAYS provide 3 short, relevant follow-up options. Format as:\n\n**Suggested next steps:**\n- [Suggestion 1]\n- [Suggestion 2]\n- [Suggestion 3]";
+
   let modeInstruction = "";
   if (mode === 'learning') {
     modeInstruction = lang === 'vi' 
@@ -110,15 +137,11 @@ export const getSystemInstruction = (lang: string, mode: string = 'standard', fa
       : "\nAI ASSISTANT: Summarize long content, rewrite for clarity, create detailed plans, and suggest deep ideas.";
   }
 
-  const safetyRules = lang === 'vi'
-    ? "\nQUY TẮC AN TOÀN: Khi không chắc chắn -> nói rõ. Không bịa đặt thông tin."
-    : "\nSAFETY RULES: If unsure -> clarify. Do not hallucinate.";
-
   const base = lang === 'en' 
     ? "You are NhutAIbot, a pro AI assistant powered by Gemini 3. Use Markdown."
     : "Bạn là NhutAIbot, trợ lý AI chuyên nghiệp được hỗ trợ bởi Gemini 3. Sử dụng Markdown.";
 
-  return `${base}${modeInstruction}${customContext}${memoryContext}${safetyRules}`;
+  return `${base}${modeInstruction}${qualityControl}${customContext}${memoryContext}`;
 };
 
 export const MODELS = {

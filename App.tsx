@@ -4,15 +4,23 @@ import {
   Send, Moon, Sun, Bot, User, Settings, Sparkles, Brain, X, Plus, 
   MessageSquare, Menu, Globe, UserCircle, Layers, Database, Check, 
   ArrowLeft, ChevronDown, ChevronUp, Languages, Layout, Shield, AlertCircle,
-  BookOpen, Code, Lightbulb, Zap, Trash2, Image as ImageIcon, Terminal, Play, Cpu, History
+  BookOpen, Code, Lightbulb, Zap, Trash2, Image as ImageIcon, Terminal, Play, Cpu, History,
+  Library, Bookmark, PenTool, Search, Command
 } from 'lucide-react';
 import { GenerateContentResponse } from "@google/genai";
 
-import { Message, Role, Theme, ChatSessionData, Source, Language } from './types';
+import { Message, Role, Theme, ChatSessionData, Source, Language, SavedPrompt } from './types';
 import { TRANSLATIONS, MODELS, getSystemInstruction } from './constants';
 import * as geminiService from './services/geminiService';
 import MarkdownRenderer from './components/MarkdownRenderer';
 import TypingIndicator from './components/TypingIndicator';
+
+const DEFAULT_PROMPTS: SavedPrompt[] = [
+  { id: '1', title: 'Giải thích Code', content: 'Hãy giải thích đoạn mã sau đây một cách chi tiết từng dòng:\n\n[Dán code vào đây]', category: 'Coding' },
+  { id: '2', title: 'Viết Email chuyên nghiệp', content: 'Hãy viết một email chuyên nghiệp gửi cho khách hàng về việc [Chủ đề], giọng văn lịch sự và thuyết phục.', category: 'Writing' },
+  { id: '3', title: 'Tóm tắt bài viết', content: 'Hãy tóm tắt văn bản sau đây thành 3 điểm chính quan trọng nhất:', category: 'Productivity' },
+  { id: '4', title: 'Tạo Roadmap học tập', content: 'Hãy tạo cho tôi một lộ trình học tập chi tiết trong 3 tháng để trở thành chuyên gia về [Chủ đề].', category: 'Learning' },
+];
 
 const App: React.FC = () => {
   const [sessions, setSessions] = useState<ChatSessionData[]>([]);
@@ -20,33 +28,38 @@ const App: React.FC = () => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [loadingStep, setLoadingStep] = useState<string>(''); 
   const [theme, setTheme] = useState<Theme>(() => (localStorage.getItem('nhutaibot_theme') as Theme) || Theme.DARK);
   const [language, setLanguage] = useState<Language>(() => (localStorage.getItem('nhutaibot_lang') as Language) || Language.VI);
   
-  // Modal/Panel states
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isAdvancedSettingsOpen, setIsAdvancedSettingsOpen] = useState(false);
   const [isTerminalOpen, setIsTerminalOpen] = useState(false);
+  const [isLibraryOpen, setIsLibraryOpen] = useState(false);
   
-  // Canvas State
+  const [savedPrompts, setSavedPrompts] = useState<SavedPrompt[]>([]);
+  const [newPromptTitle, setNewPromptTitle] = useState('');
+  const [newPromptContent, setNewPromptContent] = useState('');
+  const [newPromptCategory, setNewPromptCategory] = useState('Custom');
+  const [isAddingPrompt, setIsAddingPrompt] = useState(false);
+
   const [canvasState, setCanvasState] = useState<{ open: boolean, code: string, lang: string }>({ open: false, code: '', lang: '' });
   const [pythonOutput, setPythonOutput] = useState<string>('');
   const [isPythonLoading, setIsPythonLoading] = useState(false);
 
-  // Terminal State
-  const [terminalHistory, setTerminalHistory] = useState<string[]>(['Chào mừng tới NhutShell v1.0. Gõ "help" để bắt đầu.']);
+  const [terminalHistory, setTerminalHistory] = useState<string[]>(['Chào mừng tới NhutShell v1.2 (AI Integrated). Gõ "help" hoặc "ai <hỏi>" để bắt đầu.']);
   const [terminalInput, setTerminalInput] = useState('');
+  const [isTerminalLoading, setIsTerminalLoading] = useState(false);
+  const [terminalSuggestions, setTerminalSuggestions] = useState<string[]>([]);
   const [installedCommands, setInstalledCommands] = useState<Record<string, string>>(() => {
     const saved = localStorage.getItem('nhut_installed_cmds');
     return saved ? JSON.parse(saved) : {};
   });
 
-  // User personalization states
   const [userName, setUserName] = useState<string>(localStorage.getItem('nhutaibot_username') || '');
   const [userJob, setUserJob] = useState<string>(localStorage.getItem('nhutaibot_job') || '');
   const [customInstructions, setCustomInstructions] = useState<string>(localStorage.getItem('nhutaibot_custom') || '');
   
-  // Feature States
   const [currentMode, setCurrentMode] = useState<string>(localStorage.getItem('nhutaibot_mode') || 'standard');
   const [selectedModel, setSelectedModel] = useState<string>(localStorage.getItem('nhutaibot_model') || MODELS.FLASH.id);
   const [isCodeExecutionEnabled, setIsCodeExecutionEnabled] = useState(localStorage.getItem('nhutaibot_code') === 'true');
@@ -75,7 +88,26 @@ const App: React.FC = () => {
     } else {
       createNewSession();
     }
+    const savedPromptsLocal = localStorage.getItem('nhut_saved_prompts');
+    if (savedPromptsLocal) {
+      setSavedPrompts(JSON.parse(savedPromptsLocal));
+    } else {
+      setSavedPrompts(DEFAULT_PROMPTS);
+    }
   }, []);
+
+  useEffect(() => {
+    if (isLoading) {
+      setLoadingStep(t.thinking);
+      const timers = [
+        setTimeout(() => setLoadingStep(t.checkAnswer), 2000),
+        setTimeout(() => setLoadingStep(t.suggesting), 4000)
+      ];
+      return () => timers.forEach(clearTimeout);
+    } else {
+      setLoadingStep('');
+    }
+  }, [isLoading, t]);
 
   const createNewSession = () => {
     const newId = Date.now().toString();
@@ -144,6 +176,37 @@ const App: React.FC = () => {
     setIsAdvancedSettingsOpen(false);
   };
 
+  const handleAddPrompt = () => {
+    if (!newPromptTitle || !newPromptContent) return;
+    const newPrompt: SavedPrompt = {
+      id: Date.now().toString(),
+      title: newPromptTitle,
+      content: newPromptContent,
+      category: newPromptCategory
+    };
+    const updated = [newPrompt, ...savedPrompts];
+    setSavedPrompts(updated);
+    localStorage.setItem('nhut_saved_prompts', JSON.stringify(updated));
+    setNewPromptTitle('');
+    setNewPromptContent('');
+    setIsAddingPrompt(false);
+  };
+
+  const handleDeletePrompt = (id: string) => {
+    const updated = savedPrompts.filter(p => p.id !== id);
+    setSavedPrompts(updated);
+    localStorage.setItem('nhut_saved_prompts', JSON.stringify(updated));
+  };
+
+  const handleUsePrompt = (content: string) => {
+    if (isTerminalOpen) {
+      setTerminalInput(content);
+    } else {
+      setInput(content);
+    }
+    setIsLibraryOpen(false);
+  };
+
   const handleRunCode = async (code: string, lang: string) => {
     setCanvasState({ open: true, code, lang });
     if (lang === 'python') {
@@ -185,58 +248,63 @@ sys.stdout = io.StringIO()
     const args = fullCmd.split(' ');
     const command = args[0].toLowerCase();
 
-    // Handle Integrated Commands
-    if (command === 'help') {
+    if (command === 'ai') {
+      const prompt = args.slice(1).join(' ');
+      if (!prompt) {
+         setTerminalHistory(prev => [...prev, 'Hãy nhập câu hỏi. VD: ai Cách dùng Python?']);
+         return;
+      }
+      try {
+        setIsTerminalLoading(true);
+        setTerminalHistory(prev => [...prev, 'NhutAIbot đang suy nghĩ...']);
+        const stream = await geminiService.sendMessageStream(prompt);
+        let full = "";
+        for await (const chunk of stream) {
+          if (chunk.text) full += chunk.text;
+        }
+        setTerminalHistory(prev => {
+          const last = [...prev];
+          last[last.length - 1] = `[AI]: ${full}`;
+          return last;
+        });
+        setTerminalSuggestions(['Bạn muốn giải thích thêm không?', 'Chạy code ví dụ?', 'Lưu vào chat?']);
+      } catch (e) {
+        setTerminalHistory(prev => [...prev, 'Lỗi kết nối AI.']);
+      } finally {
+        setIsTerminalLoading(false);
+      }
+    } else if (command === 'help') {
       setTerminalHistory(prev => [...prev, 
         'Danh sách lệnh:',
+        '- ai <hỏi>: Hỏi AI ngay trong Terminal',
         '- help: Hiển thị hướng dẫn này',
         '- clear: Xóa màn hình',
         '- ls: Danh sách lệnh đã cài đặt',
         '- py <mã>: Thực thi Python',
         '- js <mã>: Thực thi Javascript',
         '- install-cmd <tên> "<mã>": Cài đặt lệnh mới',
-        '- whoami: Thông tin người dùng',
-        '- date: Thời gian hiện tại'
+        '- whoami: Thông tin người dùng'
       ]);
+      setTerminalSuggestions(['ai Xin chào', 'ls', 'whoami']);
     } else if (command === 'clear') {
-      setTerminalHistory(['NhutShell v1.0']);
+      setTerminalHistory(['NhutShell v1.2']);
+      setTerminalSuggestions([]);
     } else if (command === 'whoami') {
       setTerminalHistory(prev => [...prev, `User: ${userName || 'Khách'}, Job: ${userJob || 'N/A'}`]);
-    } else if (command === 'date') {
-      setTerminalHistory(prev => [...prev, new Date().toLocaleString()]);
+      setTerminalSuggestions(['ai Bạn biết tôi không?', 'date']);
     } else if (command === 'ls') {
       const keys = Object.keys(installedCommands);
       setTerminalHistory(prev => [...prev, keys.length ? `Lệnh đã cài: ${keys.join(', ')}` : 'Chưa cài lệnh nào.']);
+      setTerminalSuggestions(['install-cmd hello "echo Hi!"']);
     } else if (command === 'py') {
       const code = fullCmd.substring(3);
       const res = await runPython(code);
       setTerminalHistory(prev => [...prev, res]);
-    } else if (command === 'js') {
-      const code = fullCmd.substring(3);
-      try {
-        const res = eval(code);
-        setTerminalHistory(prev => [...prev, String(res)]);
-      } catch (e: any) {
-        setTerminalHistory(prev => [...prev, `JS ERROR: ${e.message}`]);
-      }
-    } else if (command === 'install-cmd') {
-      const name = args[1];
-      const script = fullCmd.match(/"([^"]+)"/)?.[1];
-      if (name && script) {
-        const newCmds = { ...installedCommands, [name]: script };
-        setInstalledCommands(newCmds);
-        localStorage.setItem('nhut_installed_cmds', JSON.stringify(newCmds));
-        setTerminalHistory(prev => [...prev, `Đã cài đặt lệnh '${name}' thành công.`]);
-      } else {
-        setTerminalHistory(prev => [...prev, 'Sai cú pháp. VD: install-cmd hi "echo Hello"']);
-      }
     } else if (installedCommands[command]) {
-      // Execute installed command
       processTerminalCommand(installedCommands[command]);
-    } else if (command === 'echo') {
-      setTerminalHistory(prev => [...prev, args.slice(1).join(' ')]);
     } else {
-      setTerminalHistory(prev => [...prev, `Lệnh '${command}' không tồn tại. Gõ 'help' để xem danh sách.`]);
+      setTerminalHistory(prev => [...prev, `Lệnh '${command}' không tồn tại. Thử: ai giải thích '${command}'`]);
+      setTerminalSuggestions([`ai Giải thích lệnh ${command}`, 'help']);
     }
   };
 
@@ -290,7 +358,6 @@ sys.stdout = io.StringIO()
   return (
     <div className={`h-screen w-full flex transition-colors overflow-hidden ${theme === Theme.DARK ? 'bg-black text-gray-200' : 'bg-white text-gray-900'}`}>
       
-      {/* Sidebar Content */}
       <aside className={`fixed lg:static inset-y-0 left-0 w-72 z-50 transform transition-transform duration-300 lg:translate-x-0 ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'} ${theme === Theme.DARK ? 'bg-gray-950 border-r border-gray-800' : 'bg-gray-50 border-r border-gray-200'} p-4 flex flex-col shadow-2xl lg:shadow-none`}>
         <div className="flex items-center justify-between mb-6">
           <h2 className="font-bold text-lg flex items-center gap-2 text-blue-500"><MessageSquare size={18} /> {t.history}</h2>
@@ -302,14 +369,14 @@ sys.stdout = io.StringIO()
           {sessions.map(s => (
             <div key={s.id} onClick={() => loadSession(s.id)} className={`p-3 rounded-xl cursor-pointer transition-all flex items-center justify-between group ${currentSessionId === s.id ? 'bg-blue-600/10 text-blue-500' : 'hover:bg-gray-200 dark:hover:bg-gray-800 text-gray-500'}`}>
               <span className="truncate text-sm font-medium">{s.title}</span>
-              <Trash2 size={14} className="opacity-0 group-hover:opacity-100 text-red-500 hover:scale-125 transition-all" onClick={(e) => { e.stopPropagation(); /* delete logic */ }} />
+              <Trash2 size={14} className="opacity-0 group-hover:opacity-100 text-red-500 hover:scale-125 transition-all" onClick={(e) => { e.stopPropagation(); }} />
             </div>
           ))}
         </div>
 
         <div className="pt-4 border-t dark:border-gray-800 space-y-1">
            <button onClick={() => setIsTerminalOpen(true)} className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-gray-200 dark:hover:bg-gray-800 transition-all font-bold text-sm text-purple-500">
-              <Terminal size={18} /> NhutShell Virtual
+              <Terminal size={18} /> NhutShell AI Virtual
            </button>
            <button onClick={() => setIsAdvancedSettingsOpen(true)} className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-gray-200 dark:hover:bg-gray-800 transition-all font-bold text-sm text-gray-500">
               <Settings size={18} /> {t.settings}
@@ -317,14 +384,12 @@ sys.stdout = io.StringIO()
         </div>
       </aside>
 
-      {/* Main Chat Area */}
       <div className={`flex-1 flex flex-col min-w-0 transition-all duration-500 ${canvasState.open ? 'lg:mr-[40%]' : ''}`}>
         <header className="h-16 flex items-center justify-between px-4 border-b dark:border-gray-800 bg-opacity-70 backdrop-blur-md z-30">
           <div className="flex items-center gap-3">
             <button onClick={() => setIsSidebarOpen(true)} className="p-2 lg:hidden"><Menu size={24} /></button>
             <span className="text-xl font-black bg-gradient-to-r from-blue-500 to-indigo-600 bg-clip-text text-transparent">NhutAIbot</span>
           </div>
-          
           <div className="hidden lg:flex items-center bg-gray-100 dark:bg-gray-900 p-1 rounded-2xl border dark:border-gray-800">
             {Object.entries(MODELS).map(([key, model]) => (
               <button key={model.id} onClick={() => setSelectedModel(model.id)} className={`px-4 py-1.5 rounded-xl text-[10px] font-black uppercase transition-all ${selectedModel === model.id ? 'bg-white dark:bg-gray-800 shadow-sm text-blue-500' : 'text-gray-500 hover:text-gray-300'}`}>
@@ -332,7 +397,6 @@ sys.stdout = io.StringIO()
               </button>
             ))}
           </div>
-
           <div className="flex items-center gap-1 md:gap-3">
             <button onClick={() => setTheme(theme === Theme.DARK ? Theme.LIGHT : Theme.DARK)} className="p-2.5 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-500">{theme === Theme.DARK ? <Sun size={20} /> : <Moon size={20} />}</button>
             <div className="w-9 h-9 bg-blue-600 rounded-full flex items-center justify-center text-white font-black text-sm shadow-lg">{userName.charAt(0).toUpperCase() || "U"}</div>
@@ -344,7 +408,7 @@ sys.stdout = io.StringIO()
              <div className="h-full flex flex-col items-center justify-center text-center max-w-lg mx-auto space-y-6 animate-slide-up">
                 <div className="w-20 h-20 bg-blue-600 rounded-[2.5rem] flex items-center justify-center shadow-2xl rotate-3"><Bot size={40} className="text-white" /></div>
                 <h1 className="text-4xl font-black tracking-tight italic">Xin chào {userName || 'bạn'}!</h1>
-                <p className="text-gray-500 font-medium">Bật <b>NhutShell</b> để thực thi lệnh hoặc dùng <b>Canvas</b> để thiết kế trực tiếp.</p>
+                <p className="text-gray-500 font-medium">Bật <b>NhutShell</b> để thực thi lệnh AI hoặc dùng <b>Canvas</b> để thiết kế trực tiếp.</p>
                 <div className="flex flex-wrap justify-center gap-2">
                    {modes.map(m => (
                      <button key={m.id} onClick={() => setCurrentMode(m.id)} className={`px-4 py-2 rounded-2xl border text-xs font-bold transition-all ${currentMode === m.id ? 'bg-blue-600 border-blue-600 text-white' : 'bg-gray-100 dark:bg-gray-900 border-transparent text-gray-500'}`}>{m.label}</button>
@@ -362,7 +426,15 @@ sys.stdout = io.StringIO()
               </div>
             </div>
           ))}
-          {isLoading && <div className="flex justify-start gap-4"><Bot size={24} className="text-blue-500 animate-pulse" /><TypingIndicator /></div>}
+          {isLoading && (
+            <div className="flex justify-start gap-4 items-center animate-slide-up">
+              <Bot size={24} className="text-blue-500 animate-pulse" />
+              <div className="flex flex-col">
+                <TypingIndicator />
+                <span className="text-xs font-bold text-blue-500 animate-pulse ml-2">{loadingStep}</span>
+              </div>
+            </div>
+          )}
           <div ref={messagesEndRef} className="h-20" />
         </main>
 
@@ -385,6 +457,7 @@ sys.stdout = io.StringIO()
                 />
                 <div className="flex items-center justify-between px-3 pb-2">
                    <div className="flex gap-1 md:gap-2">
+                      <button onClick={() => setIsLibraryOpen(true)} className="p-2.5 text-gray-500 hover:text-blue-500 rounded-full transition-all hover:bg-white/10" title={t.library}><Library size={22} /></button>
                       <button onClick={() => fileInputRef.current?.click()} className="p-2.5 text-gray-500 hover:text-blue-500 rounded-full transition-all hover:bg-white/10"><ImageIcon size={22} /></button>
                       <input type="file" ref={fileInputRef} hidden accept="image/*" onChange={(e) => {
                         const file = e.target.files?.[0];
@@ -405,20 +478,101 @@ sys.stdout = io.StringIO()
         </footer>
       </div>
 
-      {/* Virtual Terminal Overlay */}
+      {isLibraryOpen && (
+        <div className="fixed inset-0 z-[100] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
+           <div className="bg-white dark:bg-gray-950 w-full max-w-2xl h-[80vh] rounded-3xl shadow-2xl flex flex-col overflow-hidden animate-slide-up border dark:border-gray-800">
+              <header className="p-6 border-b dark:border-gray-800 flex items-center justify-between">
+                 <h2 className="text-xl font-black text-blue-500 flex items-center gap-2"><Library size={24} /> {t.library}</h2>
+                 <button onClick={() => setIsLibraryOpen(false)} className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full"><X size={20} /></button>
+              </header>
+              <div className="flex-1 overflow-y-auto p-6 space-y-4">
+                 {isAddingPrompt ? (
+                    <div className="space-y-4 p-4 bg-gray-50 dark:bg-gray-900 rounded-2xl">
+                       <input 
+                         type="text" 
+                         placeholder={t.promptTitle} 
+                         value={newPromptTitle}
+                         onChange={(e) => setNewPromptTitle(e.target.value)}
+                         className="w-full p-3 rounded-xl bg-white dark:bg-gray-800 border dark:border-gray-700 outline-none focus:border-blue-500 font-bold"
+                       />
+                       <select 
+                          value={newPromptCategory}
+                          onChange={(e) => setNewPromptCategory(e.target.value)}
+                          className="w-full p-3 rounded-xl bg-white dark:bg-gray-800 border dark:border-gray-700 outline-none"
+                       >
+                          <option value="Custom">Custom</option>
+                          <option value="Coding">Coding</option>
+                          <option value="Writing">Writing</option>
+                          <option value="Learning">Learning</option>
+                       </select>
+                       <textarea 
+                          placeholder={t.promptContent}
+                          value={newPromptContent}
+                          onChange={(e) => setNewPromptContent(e.target.value)}
+                          rows={4}
+                          className="w-full p-3 rounded-xl bg-white dark:bg-gray-800 border dark:border-gray-700 outline-none focus:border-blue-500 resize-none"
+                       />
+                       <div className="flex justify-end gap-2">
+                          <button onClick={() => setIsAddingPrompt(false)} className="px-4 py-2 text-gray-500 font-bold">{t.back}</button>
+                          <button onClick={handleAddPrompt} className="px-4 py-2 bg-blue-600 text-white rounded-xl font-bold">{t.save}</button>
+                       </div>
+                    </div>
+                 ) : (
+                    <>
+                       <button onClick={() => setIsAddingPrompt(true)} className="w-full py-3 border-2 border-dashed border-gray-300 dark:border-gray-700 rounded-2xl text-gray-500 font-bold flex items-center justify-center gap-2 hover:border-blue-500 hover:text-blue-500 transition-all">
+                          <Plus size={18} /> {t.addPrompt}
+                       </button>
+                       <div className="grid gap-3">
+                          {savedPrompts.map(prompt => (
+                             <div key={prompt.id} className="group p-4 rounded-2xl bg-gray-50 dark:bg-gray-900 hover:bg-blue-50 dark:hover:bg-blue-900/10 border border-transparent hover:border-blue-200 dark:hover:border-blue-800 transition-all cursor-pointer" onClick={() => handleUsePrompt(prompt.content)}>
+                                <div className="flex justify-between items-start mb-2">
+                                   <div>
+                                      <h3 className="font-bold text-gray-800 dark:text-gray-200">{prompt.title}</h3>
+                                      <span className="text-[10px] px-2 py-0.5 bg-gray-200 dark:bg-gray-800 rounded-full uppercase font-bold text-gray-500">{prompt.category}</span>
+                                   </div>
+                                   <button 
+                                      onClick={(e) => { e.stopPropagation(); handleDeletePrompt(prompt.id); }}
+                                      className="p-2 text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"
+                                   >
+                                      <Trash2 size={16} />
+                                   </button>
+                                </div>
+                                <p className="text-sm text-gray-500 line-clamp-2">{prompt.content}</p>
+                             </div>
+                          ))}
+                       </div>
+                    </>
+                 )}
+              </div>
+           </div>
+        </div>
+      )}
+
       {isTerminalOpen && (
         <div className="fixed inset-0 z-[110] bg-black flex flex-col animate-slide-up font-mono">
            <header className="h-12 bg-gray-900 flex items-center justify-between px-4 border-b border-gray-800">
               <div className="flex items-center gap-2 text-emerald-500">
                  <Terminal size={16} />
-                 <span className="text-sm font-bold tracking-tighter uppercase">NhutShell Terminal v1.0</span>
+                 <span className="text-sm font-bold tracking-tighter uppercase">NhutShell Terminal v1.2</span>
+                 {isTerminalLoading && <Zap size={14} className="animate-pulse text-blue-400" />}
               </div>
-              <button onClick={() => setIsTerminalOpen(false)} className="p-1.5 text-gray-500 hover:text-white"><X size={20} /></button>
+              <div className="flex items-center gap-3">
+                 <button onClick={() => setIsLibraryOpen(true)} className="p-1.5 text-gray-500 hover:text-blue-400 flex items-center gap-1"><Library size={16} /> <span className="text-[10px] font-black">PROMPT</span></button>
+                 <button onClick={() => setIsTerminalOpen(false)} className="p-1.5 text-gray-500 hover:text-white"><X size={20} /></button>
+              </div>
            </header>
-           <div className="flex-1 overflow-y-auto p-4 space-y-1 text-emerald-400 no-scrollbar bg-black">
+           <div className="flex-1 overflow-y-auto p-4 space-y-2 text-emerald-400 no-scrollbar bg-black">
               {terminalHistory.map((line, i) => (
-                <div key={i} className="whitespace-pre-wrap break-all leading-relaxed">{line}</div>
+                <div key={i} className={`whitespace-pre-wrap break-all leading-relaxed ${line.startsWith('[AI]') ? 'text-blue-400 italic' : ''}`}>{line}</div>
               ))}
+              {terminalSuggestions.length > 0 && (
+                 <div className="flex flex-wrap gap-2 mt-4 opacity-70">
+                    <span className="text-gray-600 text-xs font-bold uppercase py-1">Suggetions:</span>
+                    {terminalSuggestions.map((s, idx) => (
+                       <button key={idx} onClick={() => { setTerminalInput(s); setTerminalSuggestions([]); }} className="text-[10px] px-2 py-0.5 border border-emerald-900 rounded-full hover:bg-emerald-900 transition-all">{s}</button>
+                    ))}
+                 </div>
+              )}
               <div ref={terminalEndRef} />
            </div>
            <div className="p-4 bg-black border-t border-gray-900 flex items-center gap-2">
@@ -435,12 +589,12 @@ sys.stdout = io.StringIO()
                   }
                 }}
                 className="flex-1 bg-transparent border-none outline-none text-emerald-400 focus:ring-0"
+                placeholder="Gõ 'help' hoặc 'ai ...'"
               />
            </div>
         </div>
       )}
 
-      {/* Settings Modal (Personalization & Advanced) */}
       {isAdvancedSettingsOpen && (
         <div className="fixed inset-0 z-[100] bg-white dark:bg-black flex flex-col animate-slide-up">
           <header className="h-16 flex items-center justify-between px-6 border-b dark:border-gray-800">
@@ -495,7 +649,6 @@ sys.stdout = io.StringIO()
         </div>
       )}
 
-      {/* Canvas Sidebar Panel */}
       <div className={`fixed inset-y-0 right-0 z-[60] bg-white dark:bg-gray-950 border-l dark:border-gray-800 shadow-2xl canvas-panel ${canvasState.open ? 'translate-x-0 w-full lg:w-[45%]' : 'translate-x-full w-0'}`}>
          <div className="flex flex-col h-full">
             <header className="h-14 flex items-center justify-between px-4 border-b dark:border-gray-800">

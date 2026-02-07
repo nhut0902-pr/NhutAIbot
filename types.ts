@@ -36,6 +36,13 @@ export interface ChatSessionData {
   lastUpdated: string;
 }
 
+export interface SavedPrompt {
+  id: string;
+  title: string;
+  content: string;
+  category: string;
+}
+
 export enum Theme {
   LIGHT = 'light',
   DARK = 'dark'
